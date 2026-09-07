@@ -15,7 +15,7 @@ DIMER-ready inference pipeline for **TabDPT v1.2 (TabDPT-Turbo)**, an open-weigh
 | Field | Value |
 |---|---|
 | Upstream package | `tabdpt==1.2.0` |
-| Upstream inference repo | `layer6ai-labs/TabDPT-inference` tag `v1.2.0` |
+| Upstream inference source | `layer6ai-labs/TabDPT-inference` commit `9cfb05e0a6bc380ae6c99c08adc8d50dacd4f246` (`v1.2.0`) |
 | Hugging Face model | `Layer6/TabDPT` |
 | Weight file | `tabdpt1_2.safetensors` |
 | HF revision | `4462ffbd1d8dea25d4862d30beed4b70cd596ae5` |
