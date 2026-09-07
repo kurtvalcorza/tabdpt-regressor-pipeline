@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tabdpt_regressor_pipeline import (
     TABDPT_HF_REVISION,
     TABDPT_UPSTREAM_CODE_COMMIT,
     TABDPT_WEIGHT_SHA256,
 )
+from tabdpt_regressor_pipeline.pipeline import resolve_tabdpt_weights
 
 
 def test_pinned_model_identity():
@@ -21,3 +24,15 @@ def test_dimer_manifest_is_regression_and_license_is_present():
     assert "modelFinetuning" in manifest
     assert "modelInference" not in manifest
     assert Path("LICENSE").is_file()
+
+
+def test_resolve_tabdpt_weights_rejects_missing_local_path(tmp_path):
+    with pytest.raises(FileNotFoundError, match="model weight not found"):
+        resolve_tabdpt_weights(tmp_path / "missing.safetensors")
+
+
+def test_resolve_tabdpt_weights_rejects_digest_mismatch(tmp_path):
+    weight = tmp_path / "tabdpt1_2.safetensors"
+    weight.write_bytes(b"not-the-pinned-checkpoint")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        resolve_tabdpt_weights(weight)

@@ -8,21 +8,38 @@ from tabdpt_regressor_pipeline.dimer_runtime import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise SystemExit(message)
+
+
 required = [
     "README.md", "MODEL_CARD.md", "DIMER_CONTRACT.md", "LICENSE",
     "TABULAR_REGRESSION_DATASET_SPEC.md", "dimer-pipeline.json",
     "dimer_entrypoint.py", "pyproject.toml", "tutorials/tabdpt_regressor_colab.ipynb"
 ]
 missing = [name for name in required if not (ROOT / name).exists()]
-if missing:
-    raise SystemExit(f"Missing required files: {missing}")
+require(not missing, f"Missing required files: {missing}")
 manifest = json.loads((ROOT / "dimer-pipeline.json").read_text())
-assert manifest["version"] == 1
-assert manifest["taskType"] == "tabular_regression"
-assert set(manifest["datasetPreprocessing"]) == set(SUPPORTED_PREPROCESSING_KEYS)
-assert set(manifest["modelFinetuning"]) == set(SUPPORTED_HYPERPARAMETER_KEYS)
-assert "modelInference" not in manifest
+require(manifest.get("version") == 1, "dimer-pipeline.json version must be 1")
+require(manifest.get("taskType") == "tabular_regression", "Unexpected taskType")
+require(
+    set(manifest.get("datasetPreprocessing", {})) == set(SUPPORTED_PREPROCESSING_KEYS),
+    "datasetPreprocessing keys do not match runtime",
+)
+require(
+    set(manifest.get("modelFinetuning", {})) == set(SUPPORTED_HYPERPARAMETER_KEYS),
+    "modelFinetuning keys do not match runtime",
+)
+require("modelInference" not in manifest, "modelInference is not a supported DIMER namespace")
 notebook = json.loads((ROOT / "tutorials/tabdpt_regressor_colab.ipynb").read_text())
-assert notebook["nbformat"] == 4
-assert len(notebook["cells"]) >= 5
+require(notebook.get("nbformat") == 4, "Tutorial notebook must use nbformat 4")
+require(len(notebook.get("cells", [])) >= 5, "Tutorial notebook must contain at least five cells")
+requirements = [
+    line.strip() for line in (ROOT / "requirements.txt").read_text().splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+require(requirements == [".[model]"], "requirements.txt must delegate to pyproject.toml via .[model]")
 print("TabDPT regressor repository contract: OK")

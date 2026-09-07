@@ -47,6 +47,8 @@ def resolve_tabdpt_weights(model_weight_path: str | Path | None = None, cache_di
 class TabularFeatureEncoder:
     """Train-fitted mixed-table encoder with explicit missing/unknown categorical codes."""
 
+    STATE_SCHEMA_VERSION = 1
+
     def __init__(self) -> None:
         self.feature_columns: list[str] = []
         self.numeric_columns: set[str] = set()
@@ -70,6 +72,63 @@ class TabularFeatureEncoder:
             self.category_maps[col] = {value: idx for idx, value in enumerate(values)}
         self.is_fitted = True
         return self
+
+    def to_state(self) -> dict[str, Any]:
+        if not self.is_fitted:
+            raise RuntimeError("Feature encoder is not fitted")
+        return {
+            "schemaVersion": self.STATE_SCHEMA_VERSION,
+            "featureColumns": list(self.feature_columns),
+            "numericColumns": [col for col in self.feature_columns if col in self.numeric_columns],
+            "categoryMaps": {
+                col: dict(self.category_maps[col])
+                for col in self.feature_columns
+                if col in self.category_maps
+            },
+            "categoricalEncoding": {
+                "valueNormalization": "str",
+                "unknownCode": "len(categoryMap)",
+                "missingCode": "len(categoryMap)+1",
+            },
+        }
+
+    @classmethod
+    def from_state(cls, state: dict[str, Any]) -> "TabularFeatureEncoder":
+        if not isinstance(state, dict) or state.get("schemaVersion") != cls.STATE_SCHEMA_VERSION:
+            raise ValueError("Unsupported feature-encoder state schema")
+        feature_columns = state.get("featureColumns")
+        numeric_columns = state.get("numericColumns")
+        category_maps = state.get("categoryMaps")
+        if not isinstance(feature_columns, list) or not feature_columns or not all(isinstance(v, str) for v in feature_columns):
+            raise ValueError("featureColumns must be a non-empty list of strings")
+        if len(feature_columns) != len(set(feature_columns)):
+            raise ValueError("featureColumns contains duplicates")
+        if not isinstance(numeric_columns, list) or not all(isinstance(v, str) for v in numeric_columns):
+            raise ValueError("numericColumns must be a list of strings")
+        if not set(numeric_columns).issubset(feature_columns):
+            raise ValueError("numericColumns must be a subset of featureColumns")
+        if not isinstance(category_maps, dict):
+            raise ValueError("categoryMaps must be an object")
+        expected_categorical = set(feature_columns) - set(numeric_columns)
+        if set(category_maps) != expected_categorical:
+            raise ValueError("categoryMaps must exactly cover non-numeric feature columns")
+        normalized_maps: dict[str, dict[str, int]] = {}
+        for col in feature_columns:
+            if col in numeric_columns:
+                continue
+            mapping = category_maps[col]
+            if not isinstance(mapping, dict) or not all(isinstance(k, str) and isinstance(v, int) for k, v in mapping.items()):
+                raise ValueError(f"Invalid category map for {col!r}")
+            codes = sorted(mapping.values())
+            if codes != list(range(len(codes))):
+                raise ValueError(f"Category codes for {col!r} must be contiguous from zero")
+            normalized_maps[col] = dict(mapping)
+        encoder = cls()
+        encoder.feature_columns = list(feature_columns)
+        encoder.numeric_columns = set(numeric_columns)
+        encoder.category_maps = normalized_maps
+        encoder.is_fitted = True
+        return encoder
 
     def transform(self, frame: pd.DataFrame) -> np.ndarray:
         if not self.is_fitted:
@@ -154,6 +213,16 @@ class TabDPTRegressionPipeline:
         self.target_column = target_column
         return self
 
+    def export_preprocessing_state(self) -> dict[str, Any]:
+        if not self.feature_encoder.is_fitted or self.target_column is None:
+            raise RuntimeError("Pipeline preprocessing state is not fitted")
+        return {
+            "schemaVersion": 1,
+            "targetColumn": self.target_column,
+            "dropColumns": list(self.drop_columns_),
+            "encoder": self.feature_encoder.to_state(),
+        }
+
     def _require_fitted(self):
         if self.estimator is None or self.target_column is None:
             raise RuntimeError("Pipeline is not fitted")
@@ -193,6 +262,8 @@ class TabDPTRegressionPipeline:
         y_true = pd.to_numeric(frame[self.target_column], errors="coerce")
         if y_true.isna().any() or not np.isfinite(y_true.to_numpy(dtype=np.float64)).all():
             raise ValueError("Evaluation target must be finite and numeric")
+        if y_true.nunique() < 2:
+            raise ValueError("Regression evaluation target must not be constant because R² is undefined")
         features = frame.drop(columns=[self.target_column])
         pred = self.predict(features, **kwargs)
         mse = mean_squared_error(y_true, pred)
