@@ -14,8 +14,10 @@ def test_pinned_model_identity():
     assert TABDPT_WEIGHT_SHA256 == "06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd"
 
 
-def test_dimer_manifest_is_regression():
+def test_dimer_manifest_is_regression_and_license_is_present():
     manifest = json.loads(Path("dimer-pipeline.json").read_text())
     assert manifest["version"] == 1
     assert manifest["taskType"] == "tabular_regression"
-    assert manifest["modelInference"]["context_size"]["default"] <= manifest["datasetPreprocessing"]["max_train_rows"]["default"]
+    assert "modelFinetuning" in manifest
+    assert "modelInference" not in manifest
+    assert Path("LICENSE").is_file()

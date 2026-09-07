@@ -118,6 +118,7 @@ class TabDPTRegressionPipeline:
         self.verbose = verbose
         self.feature_encoder = TabularFeatureEncoder()
         self.target_column: str | None = None
+        self.drop_columns_: list[str] = []
         self.estimator: Any | None = None
 
     def fit(self, frame: pd.DataFrame, target_column: str = "target", drop_columns: list[str] | None = None):
@@ -125,7 +126,7 @@ class TabDPTRegressionPipeline:
             raise ValueError("Duplicate column names are not supported")
         if target_column not in frame.columns:
             raise ValueError(f"Target column {target_column!r} not found")
-        drop_columns = [c for c in (drop_columns or []) if c != target_column]
+        self.drop_columns_ = list(dict.fromkeys(c for c in (drop_columns or []) if c != target_column))
         raw_target = frame[target_column]
         target = pd.to_numeric(raw_target, errors="coerce")
         invalid = raw_target.notna() & target.isna()
@@ -136,7 +137,7 @@ class TabDPTRegressionPipeline:
             raise ValueError("Regression target must be finite and non-missing")
         if target.nunique() < 2:
             raise ValueError("Regression target must not be constant")
-        features = frame.drop(columns=[target_column, *drop_columns], errors="ignore")
+        features = frame.drop(columns=[target_column, *self.drop_columns_], errors="ignore")
         X = self.feature_encoder.fit_transform(features)
         y = target.to_numpy(dtype=np.float64)
         weights = resolve_tabdpt_weights(self.model_weight_path, self.cache_dir)
@@ -158,11 +159,13 @@ class TabDPTRegressionPipeline:
             raise RuntimeError("Pipeline is not fitted")
 
     def _feature_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
+        effective = frame.drop(columns=self.drop_columns_, errors="ignore")
         required = self.feature_encoder.feature_columns
-        missing = [col for col in required if col not in frame.columns]
-        if missing:
-            raise ValueError(f"Feature schema mismatch; missing={missing}")
-        return frame.loc[:, required]
+        missing = [col for col in required if col not in effective.columns]
+        extra = [col for col in effective.columns if col not in required]
+        if missing or extra:
+            raise ValueError(f"Feature schema mismatch; missing={missing}, extra={extra}")
+        return effective.loc[:, required]
 
     def predict(
         self,
