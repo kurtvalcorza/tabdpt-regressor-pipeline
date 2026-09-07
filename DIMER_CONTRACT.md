@@ -24,13 +24,25 @@ The existing platform transport is reused exactly:
 | `datasetPreprocessing` | `DIMER_PREPROCESSING_ARGS_JSON` | `tabdpt_regressor_pipeline.dimer_runtime` |
 | `modelFinetuning` | `DIMER_HYPERPARAMETERS_JSON` | `tabdpt_regressor_pipeline.dimer_runtime` |
 
-Every declared key is consumed. CI compares the manifest key sets to `SUPPORTED_PREPROCESSING_KEYS` and `SUPPORTED_HYPERPARAMETER_KEYS`; undeclared/unknown runtime keys are rejected.
+Every declared key is consumed. CI compares the manifest key sets to `SUPPORTED_PREPROCESSING_KEYS` and `SUPPORTED_HYPERPARAMETER_KEYS`.
+
+DIMER may additionally supply `model_id` inside `DIMER_HYPERPARAMETERS_JSON` as a **transport-only** Base Model selector. It is intentionally absent from `dimer-pipeline.json`, is accepted without changing TabDPT runtime controls, and all other undeclared hyperparameter keys are rejected.
 
 `modelFinetuning` is a platform compatibility namespace, not a claim that TabDPT weights are gradient-tuned. `fine_tune` must be `false`. The remaining values control support/context selection and validation/inference.
 
 ## Dataset execution
 
 `dimer_entrypoint.py` consumes `DIMER_DATASET_DIR`. The mounted directory must provide `train.csv` and may provide `val.csv`, either directly or inside exactly one ZIP archive.
+
+Before any CSV is loaded into pandas, the adapter enforces the standard DIMER dataset limits:
+
+- `DIMER_MAX_ARCHIVE_BYTES` for a top-level ZIP;
+- `DIMER_MAX_UNCOMPRESSED_BYTES` across dataset files/archive members;
+- `DIMER_MAX_MEMBER_BYTES` per file/member;
+- `DIMER_MAX_COMPRESSION_RATIO` per ZIP member;
+- `DIMER_MAX_DATASET_FILES` across dataset files/archive members.
+
+ZIP member paths are normalized and absolute/traversal paths plus duplicate normalized paths are rejected. Direct-directory inputs also enforce file-count, per-file, and total-byte limits before parsing.
 
 When `val.csv` is absent, the adapter creates a deterministic random holdout using `validation_split` and `seed`. The holdout is created before `max_train_rows` caps the fitted support table, preventing validation rows from entering the model context. Categorical mappings are learned only from the resulting training support.
 
@@ -54,4 +66,4 @@ This v1 runtime performs in-context fitting only. Gradient fine-tuning remains o
 
 ## Production acceptance boundary
 
-Repository CI proves manifest/runtime mapping, deterministic split/cap behavior, preprocessing/schema semantics, license/provenance presence, and static tutorial validity. Final acceptance still requires a real pinned checkpoint on GPU and an on-platform execution/deployment test.
+Repository CI proves manifest/runtime mapping, transport-only `model_id` compatibility, dataset safety limits, deterministic split/cap behavior, preprocessing/schema semantics, license/provenance presence, and static tutorial validity. Final acceptance still requires a real pinned checkpoint on GPU and an on-platform execution/deployment test.
