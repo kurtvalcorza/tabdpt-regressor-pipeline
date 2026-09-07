@@ -7,7 +7,8 @@ DIMER-ready inference pipeline for **TabDPT v1.2 (TabDPT-Turbo)**, an open-weigh
 - supervised tabular **regression** with `TabDPTRegressor`;
 - train-fitted preprocessing for mixed numeric/categorical CSV tables;
 - immutable upstream weight provenance and SHA-256 verification;
-- a DIMER pipeline manifest and integration contract;
+- a DIMER manifest plus executable local/on-prem runtime adapter;
+- deterministic validation splitting and support-row capping from DIMER runtime controls;
 - a lightweight Colab tutorial and CI tests that do not download the 254 MB model in routine CI.
 
 ## Pinned model identity
@@ -23,7 +24,18 @@ DIMER-ready inference pipeline for **TabDPT v1.2 (TabDPT-Turbo)**, an open-weigh
 | Weight size | 254,098,072 bytes |
 | License | Apache-2.0 |
 
-The weight bytes are **not committed to this repository**. Runtime acquisition is pinned to the immutable Hugging Face revision and verified before model construction.
+The weight bytes are not committed to this repository. Runtime acquisition is pinned to the immutable Hugging Face revision and verified before model construction.
+
+## DIMER runtime contract
+
+DIMER's current tabular transport is reused rather than inventing a new channel:
+
+- `datasetPreprocessing` → `DIMER_PREPROCESSING_ARGS_JSON`
+- `modelFinetuning` → `DIMER_HYPERPARAMETERS_JSON`
+
+For TabDPT, `modelFinetuning` is a compatibility transport namespace only. `fine_tune` must remain `false`; the other fields control ICL context/inference (`n_ensembles`, `context_size`, `batch_size`, `seed`). Every manifest key is consumed by `tabdpt_regressor_pipeline.dimer_runtime`, and CI checks the manifest/runtime key sets for exact equality.
+
+`dimer_entrypoint.py` reads `DIMER_DATASET_DIR`, accepts `train.csv` plus optional `val.csv` directly or inside one ZIP, applies the requested validation split/support cap, executes TabDPT, and writes `result.json`, `training_context.csv`, and `artifact.json` under the configured output paths.
 
 ## Quick start
 
@@ -40,34 +52,20 @@ from tabdpt_regressor_pipeline import TabDPTRegressionPipeline
 
 frame = load_diabetes(as_frame=True).frame
 train, test = train_test_split(frame, test_size=0.2, random_state=42)
-
 pipe = TabDPTRegressionPipeline()
 pipe.fit(train, target_column='target')
 print(pipe.evaluate(test))
 ```
 
-For production or DIMER, pass a locally mounted verified weight file with `model_weight_path=` to avoid runtime network dependence.
+For DIMER, mount/cache the verified base weight through `DIMER_BASE_MODEL_PATH` so execution does not depend on live internet access.
 
-## Operational defaults
+## Evaluation caveat
 
-TabDPT v1.2 can use full context when memory permits. DIMER exposes context and ensemble count because both directly affect memory and latency. The initial manifest uses a conservative 2,048-row context default and a 10,000-row support-table cap.
+TabDPT was pretrained on real-world tabular datasets. Public tutorial/benchmark datasets may overlap directly or indirectly with upstream pretraining. Tutorial metrics are plumbing/sanity checks, not clean evidence of out-of-distribution quality.
 
-## Important evaluation caveat
+## Upstream references
 
-TabDPT was pretrained on **real-world tabular datasets**. Public benchmark or tutorial datasets may overlap directly or indirectly with its pretraining corpus. Built-in datasets in the tutorial are therefore plumbing/sanity checks, **not clean evidence of out-of-distribution model quality**. Use application-specific held-out data for deployment decisions.
-
-## Repository map
-
-- `MODEL_CARD.md` — model provenance, intended use, limitations, and DIMER status.
-- `DIMER_CONTRACT.md` — repository/platform integration boundary.
-- `TABULAR_REGRESSION_DATASET_SPEC.md` — accepted dataset shape and split rules.
-- `dimer-pipeline.json` — versioned DIMER controls.
-- `src/tabdpt_regressor_pipeline/` — reusable inference wrapper.
-- `tutorials/tabdpt_regressor_colab.ipynb` — end-to-end smoke tutorial.
-- `scripts/validate_repo.py` — static contract validation.
-
-## Upstream
-
-TabDPT: *Scaling Tabular Foundation Models on Real Data*, NeurIPS 2025, arXiv:2410.18164.
+- Hosseinzadeh et al., *TabDPT-Turbo: Efficient In-Context Learning for Tabular Prediction*, arXiv:2608.01400 (2026). This is the paper for the v1.2 / TabDPT-Turbo release packaged here.
+- Ma et al., *TabDPT: Scaling Tabular Foundation Models*, arXiv:2410.18164 / NeurIPS 2025. This is the base TabDPT work.
 
 This repository is an integration project and is not affiliated with or endorsed by Layer 6 AI or The Toronto-Dominion Bank.

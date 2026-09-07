@@ -1,45 +1,57 @@
 # DIMER integration contract — TabDPT regressor
 
-## Repository-owned contract
-
-### Task identity
+## Task identity
 
 `dimer-pipeline.json` declares `taskType: tabular_regression`.
 
-### Base model
+## Base model
 
-The default base model is TabDPT v1.2:
+The runtime is locked to TabDPT v1.2 / TabDPT-Turbo:
 
 - `Layer6/TabDPT`
-- immutable revision `4462ffbd1d8dea25d4862d30beed4b70cd596ae5`
+- revision `4462ffbd1d8dea25d4862d30beed4b70cd596ae5`
 - `tabdpt1_2.safetensors`
 - SHA-256 `06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd`
 
-The runtime may supply `model_weight_path`; the wrapper rejects any file whose digest differs from the repository-pinned identity.
+`DIMER_BASE_MODEL_PATH` may provide an operator-mounted copy, but the wrapper still verifies the pinned digest.
 
-### Dataset and preprocessing
+## DIMER field-to-runtime mapping
 
-The wrapper consumes a labelled pandas table. Categorical encoders are fitted only on training data. Numeric missing-value imputation remains inside TabDPT and is fitted by the upstream estimator on the training context. Feature schema is locked after fit. The regression target must be numeric, finite, and non-constant.
+The existing platform transport is reused exactly:
 
-For a single uploaded labelled CSV, DIMER may create a random validation split only when IID rows are a defensible assumption. Temporal/grouped/entity data must be split upstream and supplied with preserved partitions.
+| Manifest section | Runtime channel | Consumer |
+|---|---|---|
+| `datasetPreprocessing` | `DIMER_PREPROCESSING_ARGS_JSON` | `tabdpt_regressor_pipeline.dimer_runtime` |
+| `modelFinetuning` | `DIMER_HYPERPARAMETERS_JSON` | `tabdpt_regressor_pipeline.dimer_runtime` |
 
-### Inference controls
+Every declared key is consumed. CI compares the manifest key sets to `SUPPORTED_PREPROCESSING_KEYS` and `SUPPORTED_HYPERPARAMETER_KEYS`; undeclared/unknown runtime keys are rejected.
 
-The versioned manifest exposes `n_ensembles`, `context_size`, `batch_size`, and `seed`. These control throughput/memory and prediction ensembling; they do not train model weights.
+`modelFinetuning` is a platform compatibility namespace, not a claim that TabDPT weights are gradient-tuned. `fine_tune` must be `false`. The remaining values control support/context selection and validation/inference.
 
-### Fine-tuning
+## Dataset execution
 
-This repository intentionally has **no DIMER fine-tuning contract in v1**. Upstream's supported inference API is in-context. The separate TabDPT training repository is not silently treated as a production fine-tuner.
+`dimer_entrypoint.py` consumes `DIMER_DATASET_DIR`. The mounted directory must provide `train.csv` and may provide `val.csv`, either directly or inside exactly one ZIP archive.
 
-## DIMER-side requirements
+When `val.csv` is absent, the adapter creates a deterministic random holdout using `validation_split` and `seed`. The holdout is created before `max_train_rows` caps the fitted support table, preventing validation rows from entering the model context. Categorical mappings are learned only from the resulting training support.
 
-1. Mount or cache the pinned model artifact so production inference does not depend on live internet access.
-2. Preserve the base-model digest in model registry metadata.
-3. Persist the fitted support/context table and preprocessing metadata whenever a fitted ICL predictor is promoted as a reusable deployment artifact.
-4. Treat `context_size` and `n_ensembles` as resource controls and enforce deployment-specific ceilings.
-5. Keep validation splitting semantics aligned with the dataset's temporal/group/entity structure.
-6. Run a production acceptance test: upload/preserved split → fit context → predict → persist state → fresh reload → prediction parity.
+## Feature schema
 
-## Acceptance boundary
+Configured `drop_columns` are removed before the fitted schema is established and may be present in raw inference/evaluation tables. After those columns are removed, missing features and any other extra columns are rejected.
 
-Repository CI does not download the 254 MB checkpoint. CI proves deterministic preprocessing and manifest/provenance invariants with lightweight tests. Final model execution must be tested in a GPU-capable integration environment before DIMER marks the model production-ready.
+## Outputs
+
+A successful run writes:
+
+- `result.json` at `DIMER_RESULT_PATH` (or under `DIMER_OUTPUT_DIR` by default);
+- `artifacts/training_context.csv` containing the exact capped support rows;
+- `artifacts/artifact.json` containing task, model identity, runtime controls, and context digest.
+
+The base checkpoint remains externally mounted/cached and is referenced by immutable identity rather than copied into each run output.
+
+## Fine-tuning boundary
+
+This v1 runtime performs in-context fitting only. Gradient fine-tuning remains out of scope and `fine_tune=true` fails closed.
+
+## Production acceptance boundary
+
+Repository CI proves manifest/runtime mapping, deterministic split/cap behavior, preprocessing/schema semantics, license/provenance presence, and static tutorial validity. Final acceptance still requires a real pinned checkpoint on GPU and an on-platform execution/deployment test.
