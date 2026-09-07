@@ -78,4 +78,4 @@ This runtime performs in-context fitting only. Gradient fine-tuning remains out 
 
 ## Production acceptance boundary
 
-Repository CI proves manifest/runtime mapping, transport-only `model_id` compatibility, bounded/symlink-safe dataset loading, deterministic split-before-cap behavior, target validation, preprocessing-state serialization, checkpoint-integrity guards, constant-target evaluation handling, license/provenance presence, and static tutorial validity across Python 3.10–3.12. Final acceptance still requires a real pinned checkpoint on GPU and an on-platform execution/deployment test.
+Repository CI proves manifest/runtime mapping, transport-only `model_id` compatibility, bounded/symlink-safe dataset loading, deterministic split-before-cap behavior, target validation, preprocessing-state serialization, checkpoint-integrity guards, constant-target evaluation handling, license/provenance presence, and static tutorial validity across currently released Python 3.10–3.14. Final acceptance still requires a real pinned checkpoint on GPU and an on-platform execution/deployment test.
