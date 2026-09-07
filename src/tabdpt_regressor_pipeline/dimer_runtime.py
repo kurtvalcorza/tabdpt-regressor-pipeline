@@ -5,7 +5,7 @@ import json
 import os
 import zipfile
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import numpy as np
@@ -27,6 +27,7 @@ SUPPORTED_PREPROCESSING_KEYS = frozenset(
 SUPPORTED_HYPERPARAMETER_KEYS = frozenset(
     {"fine_tune", "n_ensembles", "context_size", "batch_size", "seed"}
 )
+TRANSPORT_HYPERPARAMETER_KEYS = frozenset({"model_id"})
 
 
 def _json_object(value: str | None, name: str) -> dict[str, Any]:
@@ -41,8 +42,13 @@ def _json_object(value: str | None, name: str) -> dict[str, Any]:
     return parsed
 
 
-def _reject_unknown(payload: dict[str, Any], supported: frozenset[str], name: str) -> None:
-    unknown = sorted(set(payload) - supported)
+def _reject_unknown(
+    payload: dict[str, Any],
+    supported: frozenset[str],
+    name: str,
+    transport_keys: frozenset[str] = frozenset(),
+) -> None:
+    unknown = sorted(set(payload) - supported - transport_keys)
     if unknown:
         raise ValueError(f"Unsupported {name} keys: {unknown}")
 
@@ -97,7 +103,12 @@ class DimerRuntimeConfig:
         pre = dict(preprocessing or {})
         hp = dict(hyperparameters or {})
         _reject_unknown(pre, SUPPORTED_PREPROCESSING_KEYS, "preprocessing")
-        _reject_unknown(hp, SUPPORTED_HYPERPARAMETER_KEYS, "hyperparameter")
+        _reject_unknown(
+            hp,
+            SUPPORTED_HYPERPARAMETER_KEYS,
+            "hyperparameter",
+            transport_keys=TRANSPORT_HYPERPARAMETER_KEYS,
+        )
         target_column = pre.get("target_column", "target")
         if not isinstance(target_column, str) or not target_column.strip() or len(target_column) > 128:
             raise ValueError("target_column must be a non-empty string of at most 128 characters")
@@ -134,6 +145,84 @@ class DimerRuntimeConfig:
         }
 
 
+def _dataset_limits() -> tuple[int, int, int, float, int]:
+    limits = (
+        int(os.getenv("DIMER_MAX_ARCHIVE_BYTES", str(1024**3))),
+        int(os.getenv("DIMER_MAX_UNCOMPRESSED_BYTES", str(2 * 1024**3))),
+        int(os.getenv("DIMER_MAX_MEMBER_BYTES", str(512 * 1024**2))),
+        float(os.getenv("DIMER_MAX_COMPRESSION_RATIO", "200")),
+        int(os.getenv("DIMER_MAX_DATASET_FILES", "200")),
+    )
+    if any(value <= 0 for value in limits):
+        raise ValueError("DIMER dataset safety limits must be positive")
+    return limits
+
+
+def _normalize_member(name: str) -> str | None:
+    if not name or name.endswith("/"):
+        return None
+    normalized = name.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"Unsafe dataset archive path: {name!r}")
+    return path.as_posix() or None
+
+
+def _validate_archive(path: Path) -> list[str]:
+    max_archive, max_uncompressed, max_member, max_ratio, max_files = _dataset_limits()
+    if path.stat().st_size > max_archive:
+        raise ValueError("Dataset ZIP exceeds DIMER_MAX_ARCHIVE_BYTES")
+    members: list[str] = []
+    seen: set[str] = set()
+    total = 0
+    try:
+        with zipfile.ZipFile(path) as archive:
+            for info in archive.infolist():
+                normalized = _normalize_member(info.filename)
+                if normalized is None:
+                    continue
+                if info.file_size > max_member:
+                    raise ValueError(f"Archive member {normalized!r} exceeds DIMER_MAX_MEMBER_BYTES")
+                total += info.file_size
+                if total > max_uncompressed:
+                    raise ValueError("Dataset ZIP exceeds DIMER_MAX_UNCOMPRESSED_BYTES")
+                ratio = info.file_size / max(info.compress_size, 1)
+                if ratio > max_ratio:
+                    raise ValueError(
+                        f"Archive member {normalized!r} exceeds DIMER_MAX_COMPRESSION_RATIO"
+                    )
+                if normalized in seen:
+                    raise ValueError(f"Duplicate normalized archive path: {normalized!r}")
+                seen.add(normalized)
+                members.append(info.filename)
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"Invalid ZIP archive: {exc}") from exc
+    if len(members) > max_files:
+        raise ValueError(
+            f"Dataset ZIP contains {len(members)} files; DIMER_MAX_DATASET_FILES={max_files}"
+        )
+    return members
+
+
+def _validate_direct_dataset(root: Path) -> None:
+    _, max_uncompressed, max_member, _, max_files = _dataset_limits()
+    files = sorted(path for path in root.rglob("*") if path.is_file())
+    if len(files) > max_files:
+        raise ValueError(
+            f"Dataset directory contains {len(files)} files; DIMER_MAX_DATASET_FILES={max_files}"
+        )
+    total = 0
+    for path in files:
+        size = path.stat().st_size
+        if size > max_member:
+            raise ValueError(f"Dataset file {path.name!r} exceeds DIMER_MAX_MEMBER_BYTES")
+        total += size
+        if total > max_uncompressed:
+            raise ValueError("Dataset directory exceeds DIMER_MAX_UNCOMPRESSED_BYTES")
+
+
 def _find_csv(root: Path, stem: str, required: bool) -> Path | None:
     matches = sorted(path for path in root.rglob("*.csv") if path.stem.lower() == stem.lower())
     if len(matches) > 1:
@@ -145,10 +234,11 @@ def _find_csv(root: Path, stem: str, required: bool) -> Path | None:
     return matches[0]
 
 
-def _zip_member(archive: zipfile.ZipFile, stem: str, required: bool) -> str | None:
+def _zip_member(members: list[str], stem: str, required: bool) -> str | None:
     matches = sorted(
-        name for name in archive.namelist()
-        if not name.endswith("/") and Path(name).suffix.lower() == ".csv" and Path(name).stem.lower() == stem.lower()
+        name
+        for name in members
+        if Path(name).suffix.lower() == ".csv" and Path(name).stem.lower() == stem.lower()
     )
     if len(matches) > 1:
         raise ValueError(f"Archive contains multiple {stem}.csv files")
@@ -168,9 +258,10 @@ def load_dimer_tables(dataset_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFra
     if archives:
         if len(archives) != 1 or direct_csv:
             raise ValueError("Dataset directory must contain either CSV files or exactly one ZIP archive")
+        members = _validate_archive(archives[0])
         with zipfile.ZipFile(archives[0]) as archive:
-            train_name = _zip_member(archive, "train", required=True)
-            val_name = _zip_member(archive, "val", required=False)
+            train_name = _zip_member(members, "train", required=True)
+            val_name = _zip_member(members, "val", required=False)
             assert train_name is not None
             with archive.open(train_name) as handle:
                 train = pd.read_csv(handle)
@@ -179,6 +270,7 @@ def load_dimer_tables(dataset_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFra
                 with archive.open(val_name) as handle:
                     val = pd.read_csv(handle)
             return train, val
+    _validate_direct_dataset(root)
     train_path = _find_csv(root, "train", required=True)
     val_path = _find_csv(root, "val", required=False)
     assert train_path is not None
