@@ -74,6 +74,23 @@ def test_zip_rejects_member_over_uncompressed_size_limit(tmp_path, monkeypatch):
         load_dimer_tables(dataset)
 
 
+def test_zip_rejects_aggregate_uncompressed_size_limit(tmp_path, monkeypatch):
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    archive = dataset / "dataset.zip"
+    _write_zip(
+        archive,
+        {
+            "train.csv": "x,target\n1,0\n2,1\n",
+            "notes.txt": "N" * 64,
+        },
+    )
+    monkeypatch.setenv("DIMER_MAX_MEMBER_BYTES", "1024")
+    monkeypatch.setenv("DIMER_MAX_UNCOMPRESSED_BYTES", "64")
+    with pytest.raises(ValueError, match="DIMER_MAX_UNCOMPRESSED_BYTES"):
+        load_dimer_tables(dataset)
+
+
 def test_zip_rejects_suspicious_compression_ratio(tmp_path, monkeypatch):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
@@ -98,4 +115,13 @@ def test_zip_rejects_too_many_files(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("DIMER_MAX_DATASET_FILES", "2")
     with pytest.raises(ValueError, match="DIMER_MAX_DATASET_FILES"):
+        load_dimer_tables(dataset)
+
+
+def test_zip_rejects_path_traversal_member(tmp_path):
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    archive = dataset / "dataset.zip"
+    _write_zip(archive, {"../train.csv": "x,target\n1,0\n2,1\n"})
+    with pytest.raises(ValueError, match="Unsafe dataset archive path"):
         load_dimer_tables(dataset)
