@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "taskType": "tabular_regression",
+  "datasetPreprocessing": {
+    "target_column": {"type": "string", "kind": "length", "description": "Name of the regression target column.", "minLength": 1, "maxLength": 128, "default": "target"},
+    "drop_columns": {"type": "string", "kind": "length", "description": "Comma-separated feature columns to exclude.", "minLength": 0, "maxLength": 512, "default": ""},
+    "max_train_rows": {"type": "integer", "kind": "range", "description": "Operational cap on training/support rows.", "minimum": 200, "maximum": 50000, "default": 10000},
+    "validation_split": {"type": "number", "kind": "range", "description": "Random holdout fraction when a preserved validation split is absent.", "minimum": 0.05, "maximum": 0.4, "default": 0.2}
+  },
+  "modelInference": {
+    "n_ensembles": {"type": "integer", "kind": "range", "description": "Prediction ensemble members.", "minimum": 1, "maximum": 16, "default": 4},
+    "context_size": {"type": "integer", "kind": "range", "description": "Maximum support rows used per ensemble member.", "minimum": 128, "maximum": 16384, "default": 2048},
+    "batch_size": {"type": "integer", "kind": "range", "description": "Evaluation batch size; reduce when GPU memory is constrained.", "minimum": 1, "maximum": 131072, "default": 4096},
+    "seed": {"type": "integer", "kind": "range", "description": "Seed for context/feature permutations.", "minimum": 0, "maximum": 2147483647, "default": 42}
+  }
+}
