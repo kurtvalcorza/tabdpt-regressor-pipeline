@@ -442,9 +442,9 @@ class TabDPTRegressionPipeline:
                 ) from err
             for col in category_cols:
                 if col in context_df.columns:
-                    context_df[col] = context_df[col].astype(str)
+                    context_df[col] = context_df[col].astype("string")
         else:
-            dtype_spec = {col: str for col in category_cols}
+            dtype_spec = {col: "string" for col in category_cols}
             context_df = pd.read_csv(context_file, dtype=dtype_spec)
         effective_seed = seed if seed is not None else preprocessing.get("seed", 42)
         pipeline = cls(
