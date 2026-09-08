@@ -22,13 +22,40 @@ class FakeEstimator:
     def __init__(self, *args, **kwargs):
         self.X = None
         self.y = None
+        self.n_instances = None
+        self.n_features = None
+        self.max_features = 128
+        self.feature_reduction = "pca"
+        self.V = None
+        self.imputer = SimpleNamespace(statistics_=None)
+        self.scaler = SimpleNamespace(mean_=None, scale_=None)
 
     def fit(self, X, y):
         self.X = X
         self.y = y
+        self.n_instances, self.n_features = X.shape
+        self.imputer.statistics_ = np.nanmean(X, axis=0)
+        self.scaler.mean_ = np.mean(X, axis=0)
+        self.scaler.scale_ = np.std(X, axis=0) + 1e-6
+        if self.n_features > self.max_features:
+            try:
+                import torch
+
+                train_x = torch.as_tensor(X, dtype=torch.float32)
+                _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
+            except ImportError:
+                rng_mat = np.random.randn(self.n_features, self.max_features)
+                q, _ = np.linalg.qr(rng_mat)
+                self.V = q
+        else:
+            self.V = None
         return self
 
     def predict(self, X, **kwargs):
+        if self.V is not None:
+            v_mat = self.V.detach().cpu().numpy() if hasattr(self.V, "detach") else np.asarray(self.V)
+            proj = X @ v_mat
+            return proj.sum(axis=1).astype(np.float64)
         return np.ones(len(X), dtype=np.float64) * 42.0
 
 
@@ -168,3 +195,94 @@ def test_artifact_reload_rejects_invalid_schemas_and_formats(tmp_path, mock_tabd
     manifest_path.write_text(json.dumps({"format": "tabdpt-dimer-context-v2", "taskType": "tabular_classification"}))
     with pytest.raises(ValueError, match="Artifact taskType mismatch"):
         TabDPTRegressionPipeline.load_artifact(manifest_path)
+
+
+def test_artifact_reload_parity_wide_dataset_exceeding_native_width(tmp_path, mock_tabdpt):
+    # 1. Prepare wide training table with >128 features (135 features)
+    n_samples = 30
+    n_features = 135
+    rng = np.random.default_rng(1234)
+    data = {f"f_{i}": rng.normal(size=n_samples) for i in range(n_features)}
+    data["target"] = rng.normal(loc=100.0, scale=10.0, size=n_samples)
+    train = pd.DataFrame(data)
+
+    # 2. Fit pre-export pipeline with deterministic seed=42
+    pre_pipe = TabDPTRegressionPipeline(seed=42, compile_model=False, use_flash=False)
+    pre_pipe.fit(train, target_column="target")
+    assert pre_pipe.estimator.n_features == 135
+    assert pre_pipe.estimator.V is not None
+
+    pre_v = (
+        pre_pipe.estimator.V.detach().cpu().numpy()
+        if hasattr(pre_pipe.estimator.V, "detach")
+        else np.asarray(pre_pipe.estimator.V)
+    )
+
+    # Unlabelled test query
+    test_query = train.drop(columns=["target"]).iloc[:5].copy()
+    pre_preds = pre_pipe.predict(test_query)
+
+    # 3. Export genuine serving artifact bundle
+    artifact_dir = tmp_path / "artifacts_wide"
+    artifact_dir.mkdir(parents=True)
+    context_path = artifact_dir / "training_context.csv"
+    train.to_csv(context_path, index=False)
+
+    preprocessing_state = pre_pipe.export_preprocessing_state()
+    assert "upstream" in preprocessing_state
+    assert preprocessing_state["upstream"]["pca_basis"] is not None
+
+    manifest = {
+        "format": "tabdpt-dimer-context-v2",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": list(preprocessing_state["dropColumns"]),
+        "preprocessing": preprocessing_state,
+        "baseModel": {
+            "repo": TABDPT_HF_REPO,
+            "revision": TABDPT_HF_REVISION,
+            "filename": TABDPT_WEIGHT_FILENAME,
+            "sha256": TABDPT_WEIGHT_SHA256,
+            "upstreamCodeCommit": TABDPT_UPSTREAM_CODE_COMMIT,
+        },
+        "trainingContext": {
+            "path": context_path.name,
+            "sha256": _sha256(context_path),
+        },
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # 4. Perturb global RNG state to simulate a fresh process in a different RNG state
+    import random
+
+    random.seed(999999)
+    np.random.seed(999999)
+    try:
+        import torch
+
+        torch.manual_seed(999999)
+    except ImportError:
+        pass
+
+    # 5. Reload artifact in fresh pipeline
+    post_pipe = TabDPTRegressionPipeline.load_artifact(
+        manifest_path,
+        compile_model=False,
+        use_flash=False,
+    )
+
+    assert post_pipe.estimator.V is not None
+    post_v = (
+        post_pipe.estimator.V.detach().cpu().numpy()
+        if hasattr(post_pipe.estimator.V, "detach")
+        else np.asarray(post_pipe.estimator.V)
+    )
+
+    # Verify exact PCA basis parity between pre-export and post-reload
+    np.testing.assert_allclose(pre_v, post_v, rtol=1e-5, atol=1e-6)
+
+    # Verify exact continuous predictions parity
+    post_preds = post_pipe.predict(test_query)
+    np.testing.assert_allclose(pre_preds.to_numpy(), post_preds.to_numpy(), rtol=1e-5, atol=1e-6)
+
