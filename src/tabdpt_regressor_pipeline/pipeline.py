@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +241,109 @@ class TabDPTRegressionPipeline:
             "dropColumns": list(self.drop_columns_),
             "encoder": self.feature_encoder.to_state(),
         }
+
+    def condition_on_context(
+        self,
+        context_frame: pd.DataFrame,
+        preprocessing_state: dict[str, Any],
+    ) -> "TabDPTRegressionPipeline":
+        """Condition the pipeline on an in-context support table using restored preprocessing state without refitting."""
+        if not isinstance(preprocessing_state, dict) or preprocessing_state.get("schemaVersion") != 1:
+            raise ValueError("Unsupported preprocessing state schemaVersion")
+        encoder_state = preprocessing_state.get("encoder")
+        if not isinstance(encoder_state, dict):
+            raise ValueError("Invalid preprocessing state: missing 'encoder'")
+        target_column = preprocessing_state.get("targetColumn")
+        if not target_column or target_column not in context_frame.columns:
+            raise ValueError(f"Target column {target_column!r} not found in context frame")
+
+        self.feature_encoder = TabularFeatureEncoder.from_state(encoder_state)
+        self.target_column = target_column
+        self.drop_columns_ = list(preprocessing_state.get("dropColumns", []))
+
+        features = context_frame.drop(columns=[target_column, *self.drop_columns_], errors="ignore")
+        X = self.feature_encoder.transform(features)
+
+        raw_target = pd.to_numeric(context_frame[target_column], errors="coerce")
+        if raw_target.isna().any() or not np.isfinite(raw_target.to_numpy(dtype=np.float64)).all():
+            raise ValueError("Regression target in context frame must be finite and non-missing")
+        if raw_target.nunique() < 2:
+            raise ValueError("Regression target in context frame must not be constant")
+        y = raw_target.to_numpy(dtype=np.float64)
+
+        weights = resolve_tabdpt_weights(self.model_weight_path, self.cache_dir)
+        from tabdpt import TabDPTRegressor
+
+        self.estimator = TabDPTRegressor(
+            model_weight_path=str(weights),
+            device=self.device,
+            use_flash=self.use_flash,
+            compile=self.compile_model,
+            context_reduction="subsample",
+            verbose=self.verbose,
+        )
+        self.estimator.fit(X, y)
+        return self
+
+    @classmethod
+    def load_artifact(
+        cls,
+        artifact_path: str | Path,
+        context_path: str | Path | None = None,
+        model_weight_path: str | Path | None = None,
+        cache_dir: str | Path | None = None,
+        device: str | None = None,
+        use_flash: bool | None = None,
+        compile_model: bool = False,
+        verbose: bool = False,
+    ) -> "TabDPTRegressionPipeline":
+        """Load a DIMER serving artifact bundle, restoring preprocessing from manifest without refitting."""
+        artifact_file = Path(artifact_path)
+        if not artifact_file.is_file():
+            raise FileNotFoundError(f"Artifact manifest not found: {artifact_file}")
+        manifest = json.loads(artifact_file.read_text(encoding="utf-8"))
+        if manifest.get("format") != "tabdpt-dimer-context-v2":
+            raise ValueError(f"Unsupported artifact format: {manifest.get('format')!r}")
+        if manifest.get("taskType") != "tabular_regression":
+            raise ValueError(
+                f"Artifact taskType mismatch: expected 'tabular_regression', got {manifest.get('taskType')!r}"
+            )
+        preprocessing = manifest.get("preprocessing")
+        if not isinstance(preprocessing, dict):
+            raise ValueError("Artifact manifest missing 'preprocessing' state")
+
+        if context_path is None:
+            context_rel = manifest.get("trainingContext", {}).get("path", "training_context.csv")
+            context_file = artifact_file.parent / context_rel
+        else:
+            context_file = Path(context_path)
+
+        if not context_file.is_file():
+            raise FileNotFoundError(f"Training context table not found: {context_file}")
+
+        expected_sha = manifest.get("trainingContext", {}).get("sha256")
+        if expected_sha:
+            actual_sha = sha256_file(context_file)
+            if actual_sha != expected_sha:
+                raise RuntimeError(
+                    f"Training context digest mismatch: expected {expected_sha}, got {actual_sha}"
+                )
+
+        encoder_state = preprocessing.get("encoder", {})
+        category_cols = list(encoder_state.get("categoryMaps", {}).keys())
+        dtype_spec = {col: str for col in category_cols}
+
+        context_df = pd.read_csv(context_file, dtype=dtype_spec)
+        pipeline = cls(
+            model_weight_path=model_weight_path,
+            cache_dir=cache_dir,
+            device=device,
+            use_flash=use_flash,
+            compile_model=compile_model,
+            verbose=verbose,
+        )
+        pipeline.condition_on_context(context_df, preprocessing)
+        return pipeline
 
     def _require_fitted(self):
         if self.estimator is None or self.target_column is None:
