@@ -2,7 +2,7 @@
 
 This directory provides and documents sample datasets for the [TabDPT Regressor Colab Tutorials](../../tutorials/README.md).
 
-TabDPT is an in-context learning tabular foundation model that consumes training rows as in-context support context (`training_context.csv`). The bundled sample dataset provides a reproducible, self-contained archive formatted for DIMER ingestion.
+TabDPT is an in-context learning tabular foundation model that consumes training rows as in-context support context (`training_context.parquet`). The bundled sample dataset provides a reproducible, self-contained archive formatted for DIMER ingestion.
 
 | Dataset | Modality / Task | Rows (Train / Val) | Features | Source & License | Archive SHA-256 |
 |---|---|---|---|---|---|

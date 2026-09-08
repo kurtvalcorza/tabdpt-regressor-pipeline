@@ -124,8 +124,67 @@ def test_artifact_reload_parity_preserves_numeric_looking_categories(tmp_path, m
     assert pipe.feature_encoder.numeric_columns == {"val"}
     assert pipe.feature_encoder.category_maps["code"] == {"01": 0, "02": 1, "03": 2}
 
-    # 2. Export genuine tabdpt-dimer-context-v2 serving artifact bundle
+    # 2. Export genuine tabdpt-dimer-context-v3 serving artifact bundle
     artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    context_path = artifact_dir / "training_context.parquet"
+    train.to_parquet(context_path, index=False)
+
+    preprocessing_state = pipe.export_preprocessing_state()
+    manifest = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": list(preprocessing_state["dropColumns"]),
+        "preprocessing": preprocessing_state,
+        "baseModel": {
+            "repo": TABDPT_HF_REPO,
+            "revision": TABDPT_HF_REVISION,
+            "filename": TABDPT_WEIGHT_FILENAME,
+            "sha256": TABDPT_WEIGHT_SHA256,
+            "upstreamCodeCommit": TABDPT_UPSTREAM_CODE_COMMIT,
+        },
+        "trainingContext": {
+            "path": context_path.name,
+            "sha256": _sha256(context_path),
+        },
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # 3. Prove that load_artifact restores exact fitted preprocessing without refitting
+    restored_pipe = TabDPTRegressionPipeline.load_artifact(
+        manifest_path,
+        compile_model=False,
+        use_flash=False,
+    )
+    assert restored_pipe.target_column == "target"
+    assert restored_pipe.feature_encoder.numeric_columns == {"val"}
+    assert restored_pipe.feature_encoder.category_maps["code"] == {"01": 0, "02": 1, "03": 2}
+
+    # 4. Predict on new unlabelled test rows with string categories
+    test_query = pd.DataFrame({
+        "code": ["01", "02"],
+        "val": [15.0, 25.0],
+    })
+    preds = restored_pipe.predict(test_query)
+    assert len(preds) == 2
+    assert np.allclose(preds.to_numpy(), 42.0)
+
+
+def test_artifact_reload_backwards_compatible_with_v2_csv(tmp_path, mock_tabdpt):
+    # 1. Prepare training table with numeric-looking string categories
+    train = pd.DataFrame({
+        "code": pd.Series(["01", "02", "03", "01"], dtype="object"),
+        "val": [10.5, 20.5, 30.5, 40.5],
+        "target": [100.0, 200.0, 300.0, 400.0],
+    })
+
+    pipe = TabDPTRegressionPipeline(compile_model=False, use_flash=False)
+    pipe.fit(train, target_column="target")
+
+    # 2. Export legacy tabdpt-dimer-context-v2 serving artifact bundle with training_context.csv
+    artifact_dir = tmp_path / "artifacts_v2"
     artifact_dir.mkdir(parents=True)
     context_path = artifact_dir / "training_context.csv"
     train.to_csv(context_path, index=False)
@@ -159,7 +218,7 @@ def test_artifact_reload_parity_preserves_numeric_looking_categories(tmp_path, m
     assert "code" in naive_enc.numeric_columns, "Naive refit misidentifies code as numeric"
     assert "code" not in naive_enc.category_maps, "Naive refit destroyed category maps"
 
-    # 4. Prove that load_artifact restores exact fitted preprocessing without refitting
+    # 4. Prove that load_artifact restores exact fitted preprocessing from legacy v2 CSV
     restored_pipe = TabDPTRegressionPipeline.load_artifact(
         manifest_path,
         compile_model=False,
@@ -182,11 +241,12 @@ def test_artifact_reload_parity_preserves_numeric_looking_categories(tmp_path, m
 def test_artifact_reload_rejects_context_digest_mismatch(tmp_path, mock_tabdpt):
     artifact_dir = tmp_path / "artifacts"
     artifact_dir.mkdir()
-    context_path = artifact_dir / "training_context.csv"
-    context_path.write_text("code,val,target\n01,1.0,10.0\n02,2.0,20.0\n", encoding="utf-8")
+    context_path = artifact_dir / "training_context.parquet"
+    train = pd.DataFrame({"code": ["01", "02"], "val": [1.0, 2.0], "target": [10.0, 20.0]})
+    train.to_parquet(context_path, index=False)
 
     manifest = {
-        "format": "tabdpt-dimer-context-v2",
+        "format": "tabdpt-dimer-context-v3",
         "taskType": "tabular_regression",
         "preprocessing": {
             "schemaVersion": 1,
@@ -200,7 +260,7 @@ def test_artifact_reload_rejects_context_digest_mismatch(tmp_path, mock_tabdpt):
             },
         },
         "trainingContext": {
-            "path": "training_context.csv",
+            "path": "training_context.parquet",
             "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
         },
     }
@@ -217,7 +277,7 @@ def test_artifact_reload_rejects_invalid_schemas_and_formats(tmp_path, mock_tabd
     manifest_path = artifact_dir / "artifact.json"
 
     # Missing preprocessing
-    manifest_path.write_text(json.dumps({"format": "tabdpt-dimer-context-v2", "taskType": "tabular_regression"}))
+    manifest_path.write_text(json.dumps({"format": "tabdpt-dimer-context-v3", "taskType": "tabular_regression"}))
     with pytest.raises(ValueError, match="missing 'preprocessing' state"):
         TabDPTRegressionPipeline.load_artifact(manifest_path)
 
@@ -227,7 +287,7 @@ def test_artifact_reload_rejects_invalid_schemas_and_formats(tmp_path, mock_tabd
         TabDPTRegressionPipeline.load_artifact(manifest_path)
 
     # Wrong taskType
-    manifest_path.write_text(json.dumps({"format": "tabdpt-dimer-context-v2", "taskType": "tabular_classification"}))
+    manifest_path.write_text(json.dumps({"format": "tabdpt-dimer-context-v3", "taskType": "tabular_classification"}))
     with pytest.raises(ValueError, match="Artifact taskType mismatch"):
         TabDPTRegressionPipeline.load_artifact(manifest_path)
 
@@ -264,15 +324,15 @@ def test_artifact_reload_parity_wide_dataset_exceeding_native_width(tmp_path, mo
     # 3. Export genuine serving artifact bundle
     artifact_dir = tmp_path / "artifacts_wide"
     artifact_dir.mkdir(parents=True)
-    context_path = artifact_dir / "training_context.csv"
-    train.to_csv(context_path, index=False)
+    context_path = artifact_dir / "training_context.parquet"
+    train.to_parquet(context_path, index=False)
 
     preprocessing_state = pre_pipe.export_preprocessing_state()
     assert "upstream" in preprocessing_state
     assert preprocessing_state["upstream"]["pca_basis"] is not None
 
     manifest = {
-        "format": "tabdpt-dimer-context-v2",
+        "format": "tabdpt-dimer-context-v3",
         "taskType": "tabular_regression",
         "targetColumn": "target",
         "dropColumns": list(preprocessing_state["dropColumns"]),
@@ -349,14 +409,14 @@ def test_artifact_reload_preserves_estimator_device_for_pca_basis(tmp_path, mock
     # 3. Export genuine serving artifact bundle
     artifact_dir = tmp_path / "artifacts_device"
     artifact_dir.mkdir(parents=True)
-    context_path = artifact_dir / "training_context.csv"
-    train.to_csv(context_path, index=False)
+    context_path = artifact_dir / "training_context.parquet"
+    train.to_parquet(context_path, index=False)
 
     preprocessing_state = pipe.export_preprocessing_state()
     assert preprocessing_state["upstream"]["pca_basis"] is not None
 
     manifest = {
-        "format": "tabdpt-dimer-context-v2",
+        "format": "tabdpt-dimer-context-v3",
         "taskType": "tabular_regression",
         "targetColumn": "target",
         "dropColumns": list(preprocessing_state["dropColumns"]),
@@ -397,4 +457,169 @@ def test_artifact_reload_preserves_estimator_device_for_pca_basis(tmp_path, mock
     restored.estimator.V.device = "cpu"
     with pytest.raises(RuntimeError, match="found at least two devices"):
         restored.predict(test_query)
+
+
+def test_artifact_reload_parquet_case_insensitive_and_shorthand_extension(tmp_path, mock_tabdpt):
+    # Prepare small training table
+    train = pd.DataFrame({
+        "code": ["01", "02"],
+        "val": [10.0, 20.0],
+        "target": [100.0, 200.0],
+    })
+    pipe = TabDPTRegressionPipeline(compile_model=False, use_flash=False)
+    pipe.fit(train, target_column="target")
+    preprocessing_state = pipe.export_preprocessing_state()
+
+    # 1. Test uppercase .PARQUET extension
+    artifact_dir_upper = tmp_path / "artifacts_upper"
+    artifact_dir_upper.mkdir()
+    context_upper = artifact_dir_upper / "training_context.PARQUET"
+    train.to_parquet(context_upper, index=False)
+
+    manifest_upper = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": [],
+        "preprocessing": preprocessing_state,
+        "trainingContext": {"path": context_upper.name, "sha256": _sha256(context_upper)},
+    }
+    manifest_upper_path = artifact_dir_upper / "artifact.json"
+    manifest_upper_path.write_text(json.dumps(manifest_upper))
+    loaded_upper = TabDPTRegressionPipeline.load_artifact(manifest_upper_path, compile_model=False, use_flash=False)
+    assert np.allclose(loaded_upper.predict(train.drop(columns=["target"])).to_numpy(), 42.0)
+
+    # 2. Test shorthand .pq extension
+    artifact_dir_pq = tmp_path / "artifacts_pq"
+    artifact_dir_pq.mkdir()
+    context_pq = artifact_dir_pq / "training_context.pq"
+    train.to_parquet(context_pq, index=False)
+
+    manifest_pq = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": [],
+        "preprocessing": preprocessing_state,
+        "trainingContext": {"path": context_pq.name, "sha256": _sha256(context_pq)},
+    }
+    manifest_pq_path = artifact_dir_pq / "artifact.json"
+    manifest_pq_path.write_text(json.dumps(manifest_pq))
+    loaded_pq = TabDPTRegressionPipeline.load_artifact(manifest_pq_path, compile_model=False, use_flash=False)
+    assert np.allclose(loaded_pq.predict(train.drop(columns=["target"])).to_numpy(), 42.0)
+
+
+def test_artifact_reload_parquet_missing_pyarrow_raises_clear_error(tmp_path, mock_tabdpt, monkeypatch):
+    artifact_dir = tmp_path / "artifacts_err"
+    artifact_dir.mkdir()
+    context_path = artifact_dir / "training_context.parquet"
+    pd.DataFrame({"x": [1.0], "target": [10.0]}).to_parquet(context_path)
+
+    manifest = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "preprocessing": {
+            "schemaVersion": 1,
+            "targetColumn": "target",
+            "dropColumns": [],
+            "encoder": {
+                "schemaVersion": 1,
+                "featureColumns": ["x"],
+                "numericColumns": ["x"],
+                "categoryMaps": {},
+            },
+        },
+        "trainingContext": {"path": "training_context.parquet", "sha256": _sha256(context_path)},
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    def fake_read_parquet(*args, **kwargs):
+        raise ImportError("No module named 'pyarrow'")
+
+    monkeypatch.setattr(pd, "read_parquet", fake_read_parquet)
+    with pytest.raises(ImportError, match="pyarrow is required to load parquet serving context"):
+        TabDPTRegressionPipeline.load_artifact(manifest_path)
+
+
+def test_artifact_reload_parity_preserves_missing_categorical_values(tmp_path, mock_tabdpt):
+    # 1. Prepare training data with missing categorical values (None, pd.NA, np.nan)
+    train = pd.DataFrame({
+        "code": pd.Series(["01", None, "02", "01", pd.NA, "03"], dtype="object"),
+        "val": [10.5, 20.5, 30.5, 40.5, 50.5, 60.5],
+        "target": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5],
+    })
+
+    pipe = TabDPTRegressionPipeline(compile_model=False, use_flash=False)
+    pipe.fit(train, target_column="target")
+
+    # Feature encoder assigns contiguous codes: "01": 0, "02": 1, "03": 2
+    assert pipe.feature_encoder.category_maps["code"] == {"01": 0, "02": 1, "03": 2}
+    unknown_code = 3.0  # len(mapping)
+    missing_code = 4.0  # len(mapping) + 1
+    assert missing_code != unknown_code
+
+    # Verify fitted estimator X received missing_code (4.0) at missing indices 1 and 4
+    expected_code_col = np.array([0.0, missing_code, 1.0, 0.0, missing_code, 2.0], dtype=np.float64)
+    np.testing.assert_array_equal(pipe.estimator.X[:, 0], expected_code_col)
+
+    # 2. Export genuine tabdpt-dimer-context-v3 serving artifact bundle
+    artifact_dir = tmp_path / "artifacts_missing"
+    artifact_dir.mkdir(parents=True)
+    context_path = artifact_dir / "training_context.parquet"
+    train.to_parquet(context_path, index=False)
+
+    preprocessing_state = pipe.export_preprocessing_state()
+    manifest = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": list(preprocessing_state["dropColumns"]),
+        "preprocessing": preprocessing_state,
+        "baseModel": {
+            "repo": TABDPT_HF_REPO,
+            "revision": TABDPT_HF_REVISION,
+            "filename": TABDPT_WEIGHT_FILENAME,
+            "sha256": TABDPT_WEIGHT_SHA256,
+            "upstreamCodeCommit": TABDPT_UPSTREAM_CODE_COMMIT,
+        },
+        "trainingContext": {
+            "path": context_path.name,
+            "sha256": _sha256(context_path),
+        },
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # 3. Reload artifact and assert exact conditioning parity
+    restored_pipe = TabDPTRegressionPipeline.load_artifact(
+        manifest_path,
+        compile_model=False,
+        use_flash=False,
+    )
+
+    # Encoded training support matrices must match exactly
+    np.testing.assert_array_equal(pipe.estimator.X, restored_pipe.estimator.X)
+    np.testing.assert_array_equal(pipe.estimator.y, restored_pipe.estimator.y)
+    # Explicitly check that missing indices have missing_code, NOT unknown_code
+    assert restored_pipe.estimator.X[1, 0] == missing_code
+    assert restored_pipe.estimator.X[4, 0] == missing_code
+    assert restored_pipe.estimator.X[1, 0] != unknown_code
+
+    # 4. Assert prediction parity on test queries with known, missing, and unseen categories
+    test_df = pd.DataFrame({
+        "code": ["01", None, "99", pd.NA, "02"],  # "99" is unseen category -> unknown_code (3.0)
+        "val": [11.0, 22.0, 33.0, 44.0, 55.0],
+    })
+
+    orig_encoded = pipe.feature_encoder.transform(test_df)
+    restored_encoded = restored_pipe.feature_encoder.transform(test_df)
+    np.testing.assert_array_equal(orig_encoded, restored_encoded)
+    # Check test encoded values: 0.0 (known), 4.0 (missing), 3.0 (unknown), 4.0 (missing), 1.0 (known)
+    expected_test_code = np.array([0.0, missing_code, unknown_code, missing_code, 1.0], dtype=np.float64)
+    np.testing.assert_array_equal(orig_encoded[:, 0], expected_test_code)
+
+    np.testing.assert_allclose(pipe.predict(test_df), restored_pipe.predict(test_df))
+
+
 
