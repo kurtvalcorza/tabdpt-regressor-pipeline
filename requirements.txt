@@ -1,4 +1,2 @@
-tabdpt==1.2.0
-pandas>=2.0,<3
-scikit-learn>=1.4,<2
-huggingface-hub>=0.33.2,<2
+# Full runtime install; dependency versions are defined once in pyproject.toml.
+.[model]

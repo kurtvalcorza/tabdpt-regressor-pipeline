@@ -146,13 +146,16 @@ class DimerRuntimeConfig:
 
 
 def _dataset_limits() -> tuple[int, int, int, float, int]:
-    limits = (
-        int(os.getenv("DIMER_MAX_ARCHIVE_BYTES", str(1024**3))),
-        int(os.getenv("DIMER_MAX_UNCOMPRESSED_BYTES", str(2 * 1024**3))),
-        int(os.getenv("DIMER_MAX_MEMBER_BYTES", str(512 * 1024**2))),
-        float(os.getenv("DIMER_MAX_COMPRESSION_RATIO", "200")),
-        int(os.getenv("DIMER_MAX_DATASET_FILES", "200")),
-    )
+    try:
+        limits = (
+            int(os.getenv("DIMER_MAX_ARCHIVE_BYTES", str(1024**3))),
+            int(os.getenv("DIMER_MAX_UNCOMPRESSED_BYTES", str(2 * 1024**3))),
+            int(os.getenv("DIMER_MAX_MEMBER_BYTES", str(512 * 1024**2))),
+            float(os.getenv("DIMER_MAX_COMPRESSION_RATIO", "200")),
+            int(os.getenv("DIMER_MAX_DATASET_FILES", "200")),
+        )
+    except ValueError as exc:
+        raise ValueError("DIMER dataset safety limits must be numeric") from exc
     if any(value <= 0 for value in limits):
         raise ValueError("DIMER dataset safety limits must be positive")
     return limits
@@ -165,13 +168,15 @@ def _normalize_member(name: str) -> str | None:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     path = PurePosixPath(normalized)
-    if path.is_absolute() or ".." in path.parts:
+    if path.is_absolute() or ".." in path.parts or (path.parts and path.parts[0].endswith(":")):
         raise ValueError(f"Unsafe dataset archive path: {name!r}")
     return path.as_posix() or None
 
 
 def _validate_archive(path: Path) -> list[str]:
     max_archive, max_uncompressed, max_member, max_ratio, max_files = _dataset_limits()
+    if path.is_symlink():
+        raise ValueError("Dataset ZIP must not be a symlink")
     if path.stat().st_size > max_archive:
         raise ValueError("Dataset ZIP exceeds DIMER_MAX_ARCHIVE_BYTES")
     members: list[str] = []
@@ -208,7 +213,12 @@ def _validate_archive(path: Path) -> list[str]:
 
 def _validate_direct_dataset(root: Path) -> None:
     _, max_uncompressed, max_member, _, max_files = _dataset_limits()
-    files = sorted(path for path in root.rglob("*") if path.is_file())
+    files: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"Dataset directory must not contain symlinks: {path.relative_to(root)}")
+        if path.is_file():
+            files.append(path)
     if len(files) > max_files:
         raise ValueError(
             f"Dataset directory contains {len(files)} files; DIMER_MAX_DATASET_FILES={max_files}"
@@ -251,6 +261,8 @@ def _zip_member(members: list[str], stem: str, required: bool) -> str | None:
 
 def load_dimer_tables(dataset_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     root = Path(dataset_dir)
+    if root.is_symlink():
+        raise ValueError("DIMER_DATASET_DIR must not be a symlink")
     if not root.is_dir():
         raise ValueError(f"DIMER_DATASET_DIR is not a directory: {root}")
     archives = sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() == ".zip")
@@ -262,7 +274,8 @@ def load_dimer_tables(dataset_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFra
         with zipfile.ZipFile(archives[0]) as archive:
             train_name = _zip_member(members, "train", required=True)
             val_name = _zip_member(members, "val", required=False)
-            assert train_name is not None
+            if train_name is None:
+                raise ValueError("Archive must contain train.csv")
             with archive.open(train_name) as handle:
                 train = pd.read_csv(handle)
             val = None
@@ -273,7 +286,8 @@ def load_dimer_tables(dataset_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFra
     _validate_direct_dataset(root)
     train_path = _find_csv(root, "train", required=True)
     val_path = _find_csv(root, "val", required=False)
-    assert train_path is not None
+    if train_path is None:
+        raise ValueError("Dataset must contain train.csv")
     return pd.read_csv(train_path), pd.read_csv(val_path) if val_path is not None else None
 
 
@@ -303,7 +317,8 @@ def prepare_dimer_frames(
         _validate_target(val, config, "val")
     if len(train) > config.max_train_rows:
         train = train.sample(n=config.max_train_rows, random_state=config.seed)
-    assert val is not None
+    if val is None:
+        raise RuntimeError("Validation split was not created")
     return train.reset_index(drop=True), val.reset_index(drop=True)
 
 
@@ -346,11 +361,12 @@ def run_dimer_job() -> dict[str, Any]:
     train.to_csv(context_path, index=False)
     manifest_path = artifact_dir / "artifact.json"
     manifest = {
-        "format": "tabdpt-dimer-context-v1",
+        "format": "tabdpt-dimer-context-v2",
         "taskType": "tabular_regression",
         "targetColumn": config.target_column,
         "dropColumns": list(config.drop_columns),
         "runtimeConfig": asdict(config),
+        "preprocessing": pipeline.export_preprocessing_state(),
         "baseModel": {
             "repo": TABDPT_HF_REPO,
             "revision": TABDPT_HF_REVISION,
@@ -369,6 +385,7 @@ def run_dimer_job() -> dict[str, Any]:
             "runId": os.getenv("DIMER_RUN_ID", ""),
             "trainRows": len(train),
             "validationRows": len(val),
+            "artifactFormat": manifest["format"],
         },
         "metrics": metrics,
         "artifacts": {
@@ -398,3 +415,7 @@ def main() -> int:
             },
         )
         return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
