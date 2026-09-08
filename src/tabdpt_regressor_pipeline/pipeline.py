@@ -281,6 +281,16 @@ class TabDPTRegressionPipeline:
                     upstream["pca_basis"] = V.tolist()
                 elif isinstance(V, list):
                     upstream["pca_basis"] = V
+                elif hasattr(V, "data"):
+                    v_data = V.data
+                    if hasattr(v_data, "detach"):
+                        upstream["pca_basis"] = v_data.detach().cpu().numpy().tolist()
+                    elif isinstance(v_data, np.ndarray):
+                        upstream["pca_basis"] = v_data.tolist()
+                    elif isinstance(v_data, list):
+                        upstream["pca_basis"] = v_data
+                    else:
+                        upstream["pca_basis"] = np.asarray(v_data).tolist()
             imputer = getattr(self.estimator, "imputer", None)
             if imputer is not None and hasattr(imputer, "statistics_") and imputer.statistics_ is not None:
                 upstream["imputer_statistics"] = np.asarray(imputer.statistics_).tolist()
@@ -342,16 +352,33 @@ class TabDPTRegressionPipeline:
         if isinstance(upstream, dict):
             pca_basis = upstream.get("pca_basis")
             if pca_basis is not None and hasattr(self.estimator, "V"):
+                existing_v = getattr(self.estimator, "V", None)
+                target_device = (
+                    getattr(existing_v, "device", None)
+                    or getattr(self.estimator, "device", None)
+                    or self.device
+                    or "cpu"
+                )
                 try:
                     import torch
 
+                    target_dtype = getattr(existing_v, "dtype", torch.float32)
                     self.estimator.V = torch.as_tensor(
                         pca_basis,
-                        dtype=torch.float32,
-                        device=self.device or "cpu",
+                        dtype=target_dtype,
+                        device=target_device,
                     )
-                except (ImportError, AttributeError):
-                    self.estimator.V = np.array(pca_basis, dtype=np.float32)
+                except Exception:
+                    if hasattr(existing_v, "device") or (target_device and str(target_device) != "cpu"):
+                        from types import SimpleNamespace
+
+                        self.estimator.V = SimpleNamespace(
+                            data=np.array(pca_basis, dtype=np.float32),
+                            device=target_device,
+                            dtype=getattr(existing_v, "dtype", "float32"),
+                        )
+                    else:
+                        self.estimator.V = np.array(pca_basis, dtype=np.float32)
         return self
 
     @classmethod

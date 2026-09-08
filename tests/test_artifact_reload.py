@@ -20,6 +20,9 @@ from tabdpt_regressor_pipeline.pipeline import (
 
 class FakeEstimator:
     def __init__(self, *args, **kwargs):
+        device_arg = kwargs.get("device")
+        # Simulate upstream TabDPT auto-selecting "cuda" if available when device is None
+        self.device = "cuda" if device_arg is None else device_arg
         self.X = None
         self.y = None
         self.n_instances = None
@@ -38,22 +41,54 @@ class FakeEstimator:
         self.scaler.mean_ = np.mean(X, axis=0)
         self.scaler.scale_ = np.std(X, axis=0) + 1e-6
         if self.n_features > self.max_features:
+            rng_mat = np.random.randn(self.n_features, self.max_features).astype(np.float32)
+            q, _ = np.linalg.qr(rng_mat)
             try:
                 import torch
 
-                train_x = torch.as_tensor(X, dtype=torch.float32)
-                _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
-            except ImportError:
-                rng_mat = np.random.randn(self.n_features, self.max_features)
-                q, _ = np.linalg.qr(rng_mat)
-                self.V = q
+                if self.device == "cuda" and not torch.cuda.is_available():
+                    self.V = SimpleNamespace(
+                        data=q,
+                        device=self.device,
+                        dtype=torch.float32,
+                    )
+                else:
+                    train_x = torch.as_tensor(X, dtype=torch.float32, device=self.device)
+                    _, _, self.V = torch.pca_lowrank(train_x, q=min(train_x.shape[0], self.max_features))
+            except Exception:
+                self.V = SimpleNamespace(
+                    data=q,
+                    device=self.device,
+                    dtype="float32",
+                )
         else:
             self.V = None
         return self
 
-    def predict(self, X, **kwargs):
+    def _check_device_alignment(self):
         if self.V is not None:
-            v_mat = self.V.detach().cpu().numpy() if hasattr(self.V, "detach") else np.asarray(self.V)
+            v_device = getattr(self.V, "device", None)
+            if v_device is not None:
+                v_dev_str = str(v_device)
+                est_dev_str = str(self.device)
+                if ("cuda" in est_dev_str and "cpu" in v_dev_str) or ("cpu" in est_dev_str and "cuda" in v_dev_str):
+                    raise RuntimeError(
+                        f"Expected all tensors to be on the same device, but found at least two devices, {est_dev_str} and {v_dev_str}!"
+                    )
+
+    def _get_v_matrix(self):
+        self._check_device_alignment()
+        if self.V is None:
+            return None
+        if hasattr(self.V, "detach"):
+            return self.V.detach().cpu().numpy()
+        if hasattr(self.V, "data"):
+            return np.asarray(self.V.data)
+        return np.asarray(self.V)
+
+    def predict(self, X, **kwargs):
+        v_mat = self._get_v_matrix()
+        if v_mat is not None:
             proj = X @ v_mat
             return proj.sum(axis=1).astype(np.float64)
         return np.ones(len(X), dtype=np.float64) * 42.0
@@ -215,7 +250,11 @@ def test_artifact_reload_parity_wide_dataset_exceeding_native_width(tmp_path, mo
     pre_v = (
         pre_pipe.estimator.V.detach().cpu().numpy()
         if hasattr(pre_pipe.estimator.V, "detach")
-        else np.asarray(pre_pipe.estimator.V)
+        else (
+            pre_pipe.estimator.V.data
+            if hasattr(pre_pipe.estimator.V, "data")
+            else np.asarray(pre_pipe.estimator.V)
+        )
     )
 
     # Unlabelled test query
@@ -276,7 +315,11 @@ def test_artifact_reload_parity_wide_dataset_exceeding_native_width(tmp_path, mo
     post_v = (
         post_pipe.estimator.V.detach().cpu().numpy()
         if hasattr(post_pipe.estimator.V, "detach")
-        else np.asarray(post_pipe.estimator.V)
+        else (
+            post_pipe.estimator.V.data
+            if hasattr(post_pipe.estimator.V, "data")
+            else np.asarray(post_pipe.estimator.V)
+        )
     )
 
     # Verify exact PCA basis parity between pre-export and post-reload
@@ -285,4 +328,73 @@ def test_artifact_reload_parity_wide_dataset_exceeding_native_width(tmp_path, mo
     # Verify exact continuous predictions parity
     post_preds = post_pipe.predict(test_query)
     np.testing.assert_allclose(pre_preds.to_numpy(), post_preds.to_numpy(), rtol=1e-5, atol=1e-6)
+
+
+def test_artifact_reload_preserves_estimator_device_for_pca_basis(tmp_path, mock_tabdpt):
+    # 1. Prepare wide training table with >128 features (135 features)
+    n_samples = 20
+    n_features = 135
+    rng = np.random.default_rng(42)
+    data = {f"f_{i}": rng.normal(size=n_samples) for i in range(n_features)}
+    data["target"] = rng.normal(loc=50.0, scale=5.0, size=n_samples)
+    train = pd.DataFrame(data)
+
+    # 2. Instantiate pipeline with device=None (default DIMER runtime behavior)
+    pipe = TabDPTRegressionPipeline(device=None, compile_model=False, use_flash=False)
+    pipe.fit(train, target_column="target")
+    assert pipe.estimator.device == "cuda"
+    assert pipe.estimator.V is not None
+    assert str(pipe.estimator.V.device) == "cuda"
+
+    # 3. Export genuine serving artifact bundle
+    artifact_dir = tmp_path / "artifacts_device"
+    artifact_dir.mkdir(parents=True)
+    context_path = artifact_dir / "training_context.csv"
+    train.to_csv(context_path, index=False)
+
+    preprocessing_state = pipe.export_preprocessing_state()
+    assert preprocessing_state["upstream"]["pca_basis"] is not None
+
+    manifest = {
+        "format": "tabdpt-dimer-context-v2",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": list(preprocessing_state["dropColumns"]),
+        "preprocessing": preprocessing_state,
+        "baseModel": {
+            "repo": TABDPT_HF_REPO,
+            "revision": TABDPT_HF_REVISION,
+            "filename": TABDPT_WEIGHT_FILENAME,
+            "sha256": TABDPT_WEIGHT_SHA256,
+            "upstreamCodeCommit": TABDPT_UPSTREAM_CODE_COMMIT,
+        },
+        "trainingContext": {
+            "path": context_path.name,
+            "sha256": _sha256(context_path),
+        },
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # 4. Reload artifact with device=None (default DIMER serving behavior)
+    restored = TabDPTRegressionPipeline.load_artifact(
+        manifest_path,
+        device=None,
+        compile_model=False,
+        use_flash=False,
+    )
+    assert restored.device is None
+    assert restored.estimator.device == "cuda"
+    assert restored.estimator.V is not None
+    assert str(restored.estimator.V.device) == "cuda"
+
+    # 5. Verify continuous inference executes cleanly without CUDA vs CPU device mismatch
+    test_query = train.drop(columns=["target"]).iloc[:2]
+    preds = restored.predict(test_query)
+    assert len(preds) == 2
+
+    # 6. Verify that if V is forced to CPU while estimator is CUDA, predict raises RuntimeError
+    restored.estimator.V.device = "cpu"
+    with pytest.raises(RuntimeError, match="found at least two devices"):
+        restored.predict(test_query)
 
