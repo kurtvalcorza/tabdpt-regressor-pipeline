@@ -431,8 +431,15 @@ class TabDPTRegressionPipeline:
         encoder_state = preprocessing.get("encoder", {})
         category_cols = list(encoder_state.get("categoryMaps", {}).keys())
 
-        if context_file.suffix == ".parquet":
-            context_df = pd.read_parquet(context_file)
+        suffix = context_file.suffix.lower()
+        if suffix in (".parquet", ".pq"):
+            try:
+                context_df = pd.read_parquet(context_file, engine="pyarrow")
+            except ImportError as err:
+                raise ImportError(
+                    "pyarrow is required to load parquet serving context in 'tabdpt-dimer-context-v3'. "
+                    "Install it with 'pip install pyarrow'."
+                ) from err
             for col in category_cols:
                 if col in context_df.columns:
                     context_df[col] = context_df[col].astype(str)

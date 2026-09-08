@@ -458,3 +458,87 @@ def test_artifact_reload_preserves_estimator_device_for_pca_basis(tmp_path, mock
     with pytest.raises(RuntimeError, match="found at least two devices"):
         restored.predict(test_query)
 
+
+def test_artifact_reload_parquet_case_insensitive_and_shorthand_extension(tmp_path, mock_tabdpt):
+    # Prepare small training table
+    train = pd.DataFrame({
+        "code": ["01", "02"],
+        "val": [10.0, 20.0],
+        "target": [100.0, 200.0],
+    })
+    pipe = TabDPTRegressionPipeline(compile_model=False, use_flash=False)
+    pipe.fit(train, target_column="target")
+    preprocessing_state = pipe.export_preprocessing_state()
+
+    # 1. Test uppercase .PARQUET extension
+    artifact_dir_upper = tmp_path / "artifacts_upper"
+    artifact_dir_upper.mkdir()
+    context_upper = artifact_dir_upper / "training_context.PARQUET"
+    train.to_parquet(context_upper, index=False)
+
+    manifest_upper = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": [],
+        "preprocessing": preprocessing_state,
+        "trainingContext": {"path": context_upper.name, "sha256": _sha256(context_upper)},
+    }
+    manifest_upper_path = artifact_dir_upper / "artifact.json"
+    manifest_upper_path.write_text(json.dumps(manifest_upper))
+    loaded_upper = TabDPTRegressionPipeline.load_artifact(manifest_upper_path, compile_model=False, use_flash=False)
+    assert np.allclose(loaded_upper.predict(train.drop(columns=["target"])).to_numpy(), 42.0)
+
+    # 2. Test shorthand .pq extension
+    artifact_dir_pq = tmp_path / "artifacts_pq"
+    artifact_dir_pq.mkdir()
+    context_pq = artifact_dir_pq / "training_context.pq"
+    train.to_parquet(context_pq, index=False)
+
+    manifest_pq = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "targetColumn": "target",
+        "dropColumns": [],
+        "preprocessing": preprocessing_state,
+        "trainingContext": {"path": context_pq.name, "sha256": _sha256(context_pq)},
+    }
+    manifest_pq_path = artifact_dir_pq / "artifact.json"
+    manifest_pq_path.write_text(json.dumps(manifest_pq))
+    loaded_pq = TabDPTRegressionPipeline.load_artifact(manifest_pq_path, compile_model=False, use_flash=False)
+    assert np.allclose(loaded_pq.predict(train.drop(columns=["target"])).to_numpy(), 42.0)
+
+
+def test_artifact_reload_parquet_missing_pyarrow_raises_clear_error(tmp_path, mock_tabdpt, monkeypatch):
+    artifact_dir = tmp_path / "artifacts_err"
+    artifact_dir.mkdir()
+    context_path = artifact_dir / "training_context.parquet"
+    pd.DataFrame({"x": [1.0], "target": [10.0]}).to_parquet(context_path)
+
+    manifest = {
+        "format": "tabdpt-dimer-context-v3",
+        "taskType": "tabular_regression",
+        "preprocessing": {
+            "schemaVersion": 1,
+            "targetColumn": "target",
+            "dropColumns": [],
+            "encoder": {
+                "schemaVersion": 1,
+                "featureColumns": ["x"],
+                "numericColumns": ["x"],
+                "categoryMaps": {},
+            },
+        },
+        "trainingContext": {"path": "training_context.parquet", "sha256": _sha256(context_path)},
+    }
+    manifest_path = artifact_dir / "artifact.json"
+    manifest_path.write_text(json.dumps(manifest))
+
+    def fake_read_parquet(*args, **kwargs):
+        raise ImportError("No module named 'pyarrow'")
+
+    monkeypatch.setattr(pd, "read_parquet", fake_read_parquet)
+    with pytest.raises(ImportError, match="pyarrow is required to load parquet serving context"):
+        TabDPTRegressionPipeline.load_artifact(manifest_path)
+
+
