@@ -119,3 +119,7 @@ def test_artifact_drop_columns_use_fitted_preprocessing_state(tmp_path, monkeypa
     artifact = json.loads((output / "artifacts" / "artifact.json").read_text())
     assert artifact["dropColumns"] == ["id"]
     assert artifact["preprocessing"]["dropColumns"] == ["id"]
+    assert artifact["format"] == "tabdpt-dimer-context-v3"
+    assert artifact["trainingContext"]["path"] == "training_context.parquet"
+    assert (output / "artifacts" / "training_context.parquet").is_file()
+

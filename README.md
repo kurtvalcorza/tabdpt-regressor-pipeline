@@ -35,7 +35,7 @@ DIMER's current tabular transport is reused rather than inventing a new channel:
 
 For TabDPT, `modelFinetuning` is a compatibility transport namespace only. `fine_tune` must remain `false`; the other fields control ICL context/inference (`n_ensembles`, `context_size`, `batch_size`, `seed`). Every manifest key is consumed by `tabdpt_regressor_pipeline.dimer_runtime`, and CI checks the manifest/runtime key sets for exact equality.
 
-`dimer_entrypoint.py` reads `DIMER_DATASET_DIR`, accepts `train.csv` plus optional `val.csv` directly or inside one ZIP, applies the requested validation split/support cap, executes TabDPT, and writes `result.json`, `training_context.csv`, and `artifact.json` under the configured output paths.
+`dimer_entrypoint.py` reads `DIMER_DATASET_DIR`, accepts `train.csv` plus optional `val.csv` directly or inside one ZIP, applies the requested validation split/support cap, executes TabDPT, and writes `result.json`, `training_context.parquet`, and `artifact.json` under the configured output paths.
 
 ## Quick start
 

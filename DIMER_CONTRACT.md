@@ -54,7 +54,7 @@ Training and validation targets must be finite, numeric, non-missing, and non-co
 
 Configured `drop_columns` are removed before the fitted schema is established and may be present in raw inference/evaluation tables. The target column is never treated as a dropped feature, even if it appears in the configured list. After effective dropped columns are removed, missing features and any other extra columns are rejected.
 
-`artifacts/artifact.json` uses `format: tabdpt-dimer-context-v2` and persists a versioned `preprocessing` object containing:
+`artifacts/artifact.json` uses `format: tabdpt-dimer-context-v3` and persists a versioned `preprocessing` object containing:
 
 - fitted feature order;
 - numeric/categorical column assignments;
@@ -64,7 +64,7 @@ Configured `drop_columns` are removed before the fitted schema is established an
 
 `preprocessing.dropColumns` is the authoritative value for reconstructing fitted preprocessing. The legacy top-level `dropColumns` field is retained for compatibility and is emitted from the same fitted preprocessing state, so the two values cannot diverge.
 
-The state can be reconstructed with `TabularFeatureEncoder.from_state()` without re-inferring pandas dtypes from `training_context.csv`. This prevents numeric-looking string categories from silently changing semantics during a fresh-process reload.
+The state can be reconstructed with `TabularFeatureEncoder.from_state()` without re-inferring pandas dtypes from `training_context.parquet`. This prevents numeric-looking string categories from silently changing semantics during a fresh-process reload.
 
 ## GPU attention compatibility
 
@@ -77,7 +77,7 @@ The Colab/Kaggle tutorial passes `use_flash=False` explicitly so it runs on comm
 A successful run writes:
 
 - `result.json` at `DIMER_RESULT_PATH` (or under `DIMER_OUTPUT_DIR` by default);
-- `artifacts/training_context.csv` containing the exact capped support rows;
+- `artifacts/training_context.parquet` containing the exact capped support rows;
 - `artifacts/artifact.json` containing task/model identity, runtime controls, versioned fitted preprocessing state, and context digest.
 
 The base checkpoint remains externally mounted/cached and is referenced by immutable identity rather than copied into each run output.

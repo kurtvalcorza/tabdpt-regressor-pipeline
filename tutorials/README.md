@@ -12,7 +12,7 @@ These interactive tutorials demonstrate how to run TabDPT Regressor in standalon
 | Notebook | Accelerator | Expected Runtime | Focus |
 |---|---|---|---|
 | [`tabdpt_regressor_colab.ipynb`](tabdpt_regressor_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_colab.ipynb) | GPU (Tesla T4 or newer; CPU supported for smoke test) | ~1–2 minutes | End-to-end tutorial: install package, fit support table in-context, predict continuous values, evaluate test holdout (MAE, RMSE, R²). |
-| [`tabdpt_regressor_artifact_inference_colab.ipynb`](tabdpt_regressor_artifact_inference_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb) | GPU (Tesla T4 or newer; CPU supported) | ~1–2 minutes | Artifact inference tutorial: load exported DIMER bundle (`artifact.json` + `training_context.csv`), verify context digest, score unlabelled batch data without refitting. |
+| [`tabdpt_regressor_artifact_inference_colab.ipynb`](tabdpt_regressor_artifact_inference_colab.ipynb) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb) | GPU (Tesla T4 or newer; CPU supported) | ~1–2 minutes | Artifact inference tutorial: load exported DIMER bundle (`artifact.json` + `training_context.parquet`), verify context digest, score unlabelled batch data without refitting. |
 
 ---
 
@@ -25,5 +25,5 @@ These interactive tutorials demonstrate how to run TabDPT Regressor in standalon
 
 ## Artifact Trust and Data Governance
 
-1. **Digest Verification:** Always verify `training_context.csv` SHA-256 against `artifact.json` before loading.
+1. **Digest Verification:** Always verify `training_context.parquet` SHA-256 against `artifact.json` before loading.
 2. **Data Governance:** In-context foundation models preserve the training context table as part of the model state. Treat exported artifact bundles with the same confidentiality, retention, and access policies as the underlying training dataset.

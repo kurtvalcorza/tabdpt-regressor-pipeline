@@ -13,7 +13,8 @@ dependencies = [
   "numpy>=1.25,<3",
   "pandas>=2.0,<3",
   "scikit-learn>=1.4,<2",
-  "huggingface-hub>=0.33.2,<2"
+  "huggingface-hub>=0.33.2,<2",
+  "pyarrow>=14.0,<26"
 ]
 
 [project.optional-dependencies]

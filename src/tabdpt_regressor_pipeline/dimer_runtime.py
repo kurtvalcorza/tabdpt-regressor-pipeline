@@ -364,12 +364,12 @@ def run_dimer_job() -> dict[str, Any]:
 
     artifact_dir = output_dir / "artifacts"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    context_path = artifact_dir / "training_context.csv"
-    train.to_csv(context_path, index=False)
+    context_path = artifact_dir / "training_context.parquet"
+    train.to_parquet(context_path, index=False)
     manifest_path = artifact_dir / "artifact.json"
     preprocessing_state = pipeline.export_preprocessing_state()
     manifest = {
-        "format": "tabdpt-dimer-context-v2",
+        "format": "tabdpt-dimer-context-v3",
         "taskType": "tabular_regression",
         "targetColumn": config.target_column,
         "dropColumns": list(preprocessing_state["dropColumns"]),

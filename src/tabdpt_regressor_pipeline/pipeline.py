@@ -399,8 +399,9 @@ class TabDPTRegressionPipeline:
         if not artifact_file.is_file():
             raise FileNotFoundError(f"Artifact manifest not found: {artifact_file}")
         manifest = json.loads(artifact_file.read_text(encoding="utf-8"))
-        if manifest.get("format") != "tabdpt-dimer-context-v2":
-            raise ValueError(f"Unsupported artifact format: {manifest.get('format')!r}")
+        fmt = manifest.get("format")
+        if fmt not in ("tabdpt-dimer-context-v3", "tabdpt-dimer-context-v2"):
+            raise ValueError(f"Unsupported artifact format: {fmt!r}")
         if manifest.get("taskType") != "tabular_regression":
             raise ValueError(
                 f"Artifact taskType mismatch: expected 'tabular_regression', got {manifest.get('taskType')!r}"
@@ -410,7 +411,8 @@ class TabDPTRegressionPipeline:
             raise ValueError("Artifact manifest missing 'preprocessing' state")
 
         if context_path is None:
-            context_rel = manifest.get("trainingContext", {}).get("path", "training_context.csv")
+            default_name = "training_context.parquet" if fmt == "tabdpt-dimer-context-v3" else "training_context.csv"
+            context_rel = manifest.get("trainingContext", {}).get("path", default_name)
             context_file = artifact_file.parent / context_rel
         else:
             context_file = Path(context_path)
@@ -428,9 +430,15 @@ class TabDPTRegressionPipeline:
 
         encoder_state = preprocessing.get("encoder", {})
         category_cols = list(encoder_state.get("categoryMaps", {}).keys())
-        dtype_spec = {col: str for col in category_cols}
 
-        context_df = pd.read_csv(context_file, dtype=dtype_spec)
+        if context_file.suffix == ".parquet":
+            context_df = pd.read_parquet(context_file)
+            for col in category_cols:
+                if col in context_df.columns:
+                    context_df[col] = context_df[col].astype(str)
+        else:
+            dtype_spec = {col: str for col in category_cols}
+            context_df = pd.read_csv(context_file, dtype=dtype_spec)
         effective_seed = seed if seed is not None else preprocessing.get("seed", 42)
         pipeline = cls(
             model_weight_path=model_weight_path,
