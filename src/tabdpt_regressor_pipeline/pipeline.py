@@ -44,6 +44,24 @@ def resolve_tabdpt_weights(model_weight_path: str | Path | None = None, cache_di
     return path
 
 
+def _resolve_use_flash(requested: bool | None, device: str | None) -> bool:
+    """Enable FlashAttention by default only on CUDA devices with compute capability >= 8.0."""
+    if requested is not None:
+        return requested
+    if device is not None and not str(device).startswith("cuda"):
+        return False
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        target = None if device in (None, "cuda") else device
+        major, _ = torch.cuda.get_device_capability(target)
+        return major >= 8
+    except Exception:
+        return False
+
+
 class TabularFeatureEncoder:
     """Train-fitted mixed-table encoder with explicit missing/unknown categorical codes."""
 
@@ -165,14 +183,14 @@ class TabDPTRegressionPipeline:
         model_weight_path: str | Path | None = None,
         cache_dir: str | Path | None = None,
         device: str | None = None,
-        use_flash: bool = True,
+        use_flash: bool | None = None,
         compile_model: bool = False,
         verbose: bool = False,
     ) -> None:
         self.model_weight_path = model_weight_path
         self.cache_dir = cache_dir
         self.device = device
-        self.use_flash = use_flash
+        self.use_flash = _resolve_use_flash(use_flash, device)
         self.compile_model = compile_model
         self.verbose = verbose
         self.feature_encoder = TabularFeatureEncoder()
