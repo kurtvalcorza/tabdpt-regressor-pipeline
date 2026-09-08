@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -177,6 +178,23 @@ class TabularFeatureEncoder:
         return self.fit(frame).transform(frame)
 
 
+def _set_deterministic_seed(seed: int | None) -> None:
+    if seed is None:
+        return
+    import random
+
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except (ImportError, AttributeError):
+        pass
+
+
 class TabDPTRegressionPipeline:
     def __init__(
         self,
@@ -186,6 +204,7 @@ class TabDPTRegressionPipeline:
         use_flash: bool | None = None,
         compile_model: bool = False,
         verbose: bool = False,
+        seed: int | None = 42,
     ) -> None:
         self.model_weight_path = model_weight_path
         self.cache_dir = cache_dir
@@ -193,16 +212,26 @@ class TabDPTRegressionPipeline:
         self.use_flash = _resolve_use_flash(use_flash, device)
         self.compile_model = compile_model
         self.verbose = verbose
+        self.seed = seed
         self.feature_encoder = TabularFeatureEncoder()
         self.target_column: str | None = None
         self.drop_columns_: list[str] = []
         self.estimator: Any | None = None
 
-    def fit(self, frame: pd.DataFrame, target_column: str = "target", drop_columns: list[str] | None = None):
+    def fit(
+        self,
+        frame: pd.DataFrame,
+        target_column: str = "target",
+        drop_columns: list[str] | None = None,
+        seed: int | None = None,
+    ):
         if frame.columns.duplicated().any():
             raise ValueError("Duplicate column names are not supported")
         if target_column not in frame.columns:
             raise ValueError(f"Target column {target_column!r} not found")
+        if seed is not None:
+            self.seed = seed
+        _set_deterministic_seed(self.seed)
         self.drop_columns_ = list(dict.fromkeys(c for c in (drop_columns or []) if c != target_column))
         raw_target = frame[target_column]
         target = pd.to_numeric(raw_target, errors="coerce")
@@ -219,6 +248,7 @@ class TabDPTRegressionPipeline:
         y = target.to_numpy(dtype=np.float64)
         weights = resolve_tabdpt_weights(self.model_weight_path, self.cache_dir)
         from tabdpt import TabDPTRegressor
+
         self.estimator = TabDPTRegressor(
             model_weight_path=str(weights),
             device=self.device,
@@ -234,12 +264,185 @@ class TabDPTRegressionPipeline:
     def export_preprocessing_state(self) -> dict[str, Any]:
         if not self.feature_encoder.is_fitted or self.target_column is None:
             raise RuntimeError("Pipeline preprocessing state is not fitted")
-        return {
+        state: dict[str, Any] = {
             "schemaVersion": 1,
             "targetColumn": self.target_column,
             "dropColumns": list(self.drop_columns_),
+            "seed": self.seed,
             "encoder": self.feature_encoder.to_state(),
         }
+        if self.estimator is not None:
+            upstream: dict[str, Any] = {"seed": self.seed}
+            V = getattr(self.estimator, "V", None)
+            if V is not None:
+                if hasattr(V, "detach"):
+                    upstream["pca_basis"] = V.detach().cpu().numpy().tolist()
+                elif isinstance(V, np.ndarray):
+                    upstream["pca_basis"] = V.tolist()
+                elif isinstance(V, list):
+                    upstream["pca_basis"] = V
+                elif hasattr(V, "data"):
+                    v_data = V.data
+                    if hasattr(v_data, "detach"):
+                        upstream["pca_basis"] = v_data.detach().cpu().numpy().tolist()
+                    elif isinstance(v_data, np.ndarray):
+                        upstream["pca_basis"] = v_data.tolist()
+                    elif isinstance(v_data, list):
+                        upstream["pca_basis"] = v_data
+                    else:
+                        upstream["pca_basis"] = np.asarray(v_data).tolist()
+            imputer = getattr(self.estimator, "imputer", None)
+            if imputer is not None and hasattr(imputer, "statistics_") and imputer.statistics_ is not None:
+                upstream["imputer_statistics"] = np.asarray(imputer.statistics_).tolist()
+            scaler = getattr(self.estimator, "scaler", None)
+            if scaler is not None and hasattr(scaler, "mean_") and scaler.mean_ is not None:
+                upstream["scaler_mean"] = np.asarray(scaler.mean_).tolist()
+                upstream["scaler_scale"] = np.asarray(scaler.scale_).tolist()
+            state["upstream"] = upstream
+        return state
+
+    def condition_on_context(
+        self,
+        context_frame: pd.DataFrame,
+        preprocessing_state: dict[str, Any],
+        seed: int | None = None,
+    ) -> "TabDPTRegressionPipeline":
+        """Condition the pipeline on an in-context support table using restored preprocessing state without refitting."""
+        if not isinstance(preprocessing_state, dict) or preprocessing_state.get("schemaVersion") != 1:
+            raise ValueError("Unsupported preprocessing state schemaVersion")
+        encoder_state = preprocessing_state.get("encoder")
+        if not isinstance(encoder_state, dict):
+            raise ValueError("Invalid preprocessing state: missing 'encoder'")
+        target_column = preprocessing_state.get("targetColumn")
+        if not target_column or target_column not in context_frame.columns:
+            raise ValueError(f"Target column {target_column!r} not found in context frame")
+
+        effective_seed = seed if seed is not None else preprocessing_state.get("seed", self.seed)
+        _set_deterministic_seed(effective_seed)
+        self.seed = effective_seed
+
+        self.feature_encoder = TabularFeatureEncoder.from_state(encoder_state)
+        self.target_column = target_column
+        self.drop_columns_ = list(preprocessing_state.get("dropColumns", []))
+
+        features = context_frame.drop(columns=[target_column, *self.drop_columns_], errors="ignore")
+        X = self.feature_encoder.transform(features)
+
+        raw_target = pd.to_numeric(context_frame[target_column], errors="coerce")
+        if raw_target.isna().any() or not np.isfinite(raw_target.to_numpy(dtype=np.float64)).all():
+            raise ValueError("Regression target in context frame must be finite and non-missing")
+        if raw_target.nunique() < 2:
+            raise ValueError("Regression target in context frame must not be constant")
+        y = raw_target.to_numpy(dtype=np.float64)
+
+        weights = resolve_tabdpt_weights(self.model_weight_path, self.cache_dir)
+        from tabdpt import TabDPTRegressor
+
+        self.estimator = TabDPTRegressor(
+            model_weight_path=str(weights),
+            device=self.device,
+            use_flash=self.use_flash,
+            compile=self.compile_model,
+            context_reduction="subsample",
+            verbose=self.verbose,
+        )
+        self.estimator.fit(X, y)
+
+        upstream = preprocessing_state.get("upstream")
+        if isinstance(upstream, dict):
+            pca_basis = upstream.get("pca_basis")
+            if pca_basis is not None and hasattr(self.estimator, "V"):
+                existing_v = getattr(self.estimator, "V", None)
+                target_device = (
+                    getattr(existing_v, "device", None)
+                    or getattr(self.estimator, "device", None)
+                    or self.device
+                    or "cpu"
+                )
+                try:
+                    import torch
+
+                    target_dtype = getattr(existing_v, "dtype", torch.float32)
+                    self.estimator.V = torch.as_tensor(
+                        pca_basis,
+                        dtype=target_dtype,
+                        device=target_device,
+                    )
+                except Exception:
+                    if hasattr(existing_v, "device") or (target_device and str(target_device) != "cpu"):
+                        from types import SimpleNamespace
+
+                        self.estimator.V = SimpleNamespace(
+                            data=np.array(pca_basis, dtype=np.float32),
+                            device=target_device,
+                            dtype=getattr(existing_v, "dtype", "float32"),
+                        )
+                    else:
+                        self.estimator.V = np.array(pca_basis, dtype=np.float32)
+        return self
+
+    @classmethod
+    def load_artifact(
+        cls,
+        artifact_path: str | Path,
+        context_path: str | Path | None = None,
+        model_weight_path: str | Path | None = None,
+        cache_dir: str | Path | None = None,
+        device: str | None = None,
+        use_flash: bool | None = None,
+        compile_model: bool = False,
+        verbose: bool = False,
+        seed: int | None = None,
+    ) -> "TabDPTRegressionPipeline":
+        """Load a DIMER serving artifact bundle, restoring preprocessing from manifest without refitting."""
+        artifact_file = Path(artifact_path)
+        if not artifact_file.is_file():
+            raise FileNotFoundError(f"Artifact manifest not found: {artifact_file}")
+        manifest = json.loads(artifact_file.read_text(encoding="utf-8"))
+        if manifest.get("format") != "tabdpt-dimer-context-v2":
+            raise ValueError(f"Unsupported artifact format: {manifest.get('format')!r}")
+        if manifest.get("taskType") != "tabular_regression":
+            raise ValueError(
+                f"Artifact taskType mismatch: expected 'tabular_regression', got {manifest.get('taskType')!r}"
+            )
+        preprocessing = manifest.get("preprocessing")
+        if not isinstance(preprocessing, dict):
+            raise ValueError("Artifact manifest missing 'preprocessing' state")
+
+        if context_path is None:
+            context_rel = manifest.get("trainingContext", {}).get("path", "training_context.csv")
+            context_file = artifact_file.parent / context_rel
+        else:
+            context_file = Path(context_path)
+
+        if not context_file.is_file():
+            raise FileNotFoundError(f"Training context table not found: {context_file}")
+
+        expected_sha = manifest.get("trainingContext", {}).get("sha256")
+        if expected_sha:
+            actual_sha = sha256_file(context_file)
+            if actual_sha != expected_sha:
+                raise RuntimeError(
+                    f"Training context digest mismatch: expected {expected_sha}, got {actual_sha}"
+                )
+
+        encoder_state = preprocessing.get("encoder", {})
+        category_cols = list(encoder_state.get("categoryMaps", {}).keys())
+        dtype_spec = {col: str for col in category_cols}
+
+        context_df = pd.read_csv(context_file, dtype=dtype_spec)
+        effective_seed = seed if seed is not None else preprocessing.get("seed", 42)
+        pipeline = cls(
+            model_weight_path=model_weight_path,
+            cache_dir=cache_dir,
+            device=device,
+            use_flash=use_flash,
+            compile_model=compile_model,
+            verbose=verbose,
+            seed=effective_seed,
+        )
+        pipeline.condition_on_context(context_df, preprocessing, seed=effective_seed)
+        return pipeline
 
     def _require_fitted(self):
         if self.estimator is None or self.target_column is None:

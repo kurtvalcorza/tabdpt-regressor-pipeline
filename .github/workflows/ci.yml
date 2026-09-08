@@ -20,3 +20,4 @@ jobs:
       - run: pip install -e '.[test]'
       - run: pytest -q
       - run: python scripts/validate_repo.py
+      - run: python scripts/validate_colab_tutorial.py
