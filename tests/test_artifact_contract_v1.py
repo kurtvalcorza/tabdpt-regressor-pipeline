@@ -40,6 +40,19 @@ def test_exported_artifact_validates_without_loading_model(tmp_path):
     assert context_path.is_file()
 
 
+def test_established_v3_runtime_manifest_remains_accepted(tmp_path):
+    manifest_path = _export_without_model_download(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("formatVersion")
+    manifest.pop("artifactSemantics")
+    manifest["trainingContext"].pop("size")
+    manifest_path.write_text(json.dumps(manifest))
+
+    validated, _ = validate_artifact_bundle(manifest_path)
+    assert validated["format"] == ARTIFACT_FORMAT
+    assert validated["baseModel"] == EXPECTED_BASE_MODEL
+
+
 def test_artifact_rejects_base_model_revision_mismatch(tmp_path):
     manifest_path = _export_without_model_download(tmp_path)
     manifest = json.loads(manifest_path.read_text())
