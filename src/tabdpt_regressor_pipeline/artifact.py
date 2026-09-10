@@ -101,7 +101,13 @@ def export_artifact_bundle(
 
 
 def validate_artifact_bundle(artifact_path: str | Path) -> tuple[dict[str, Any], Path]:
-    """Validate artifact identity and context integrity before model-state reconstruction."""
+    """Validate artifact identity and context integrity before model-state reconstruction.
+
+    Existing DIMER v3 manifests encode their version in ``format`` and may omit the newer
+    explicit ``formatVersion``, ``artifactSemantics``, and context ``size`` fields. When those
+    additive fields are present they are validated; their absence does not invalidate a v3
+    artifact produced by the repository's established runtime contract.
+    """
     manifest_path = Path(artifact_path)
     if not manifest_path.is_file() or manifest_path.is_symlink():
         raise ValueError(f"Artifact manifest must be a regular file: {manifest_path}")
@@ -113,15 +119,15 @@ def validate_artifact_bundle(artifact_path: str | Path) -> tuple[dict[str, Any],
         raise ValueError("Artifact manifest must contain a JSON object")
     if manifest.get("format") != ARTIFACT_FORMAT:
         raise ValueError(f"Unsupported artifact format: {manifest.get('format')!r}")
-    if manifest.get("formatVersion") != ARTIFACT_FORMAT_VERSION:
+
+    explicit_version = manifest.get("formatVersion")
+    if explicit_version is not None and explicit_version != ARTIFACT_FORMAT_VERSION:
         raise ValueError(
-            f"Unsupported artifact formatVersion: {manifest.get('formatVersion')!r}; "
-            f"expected {ARTIFACT_FORMAT_VERSION}"
+            f"Unsupported artifact formatVersion: {explicit_version!r}; expected {ARTIFACT_FORMAT_VERSION}"
         )
-    if manifest.get("artifactSemantics") != ARTIFACT_SEMANTICS:
-        raise ValueError(
-            f"Unsupported artifact semantics: {manifest.get('artifactSemantics')!r}"
-        )
+    explicit_semantics = manifest.get("artifactSemantics")
+    if explicit_semantics is not None and explicit_semantics != ARTIFACT_SEMANTICS:
+        raise ValueError(f"Unsupported artifact semantics: {explicit_semantics!r}")
     if manifest.get("taskType") != "tabular_regression":
         raise ValueError(f"Artifact taskType mismatch: {manifest.get('taskType')!r}")
 
@@ -151,12 +157,13 @@ def validate_artifact_bundle(artifact_path: str | Path) -> tuple[dict[str, Any],
         raise ValueError(f"Training context must be a regular file: {context_path}")
 
     expected_size = context.get("size")
-    if not isinstance(expected_size, int) or expected_size < 0:
-        raise ValueError("Training context size is missing or invalid")
-    if expected_size != context_path.stat().st_size:
-        raise ValueError(
-            f"Training context size mismatch: expected {expected_size}, got {context_path.stat().st_size}"
-        )
+    if expected_size is not None:
+        if not isinstance(expected_size, int) or expected_size < 0:
+            raise ValueError("Training context size is invalid")
+        if expected_size != context_path.stat().st_size:
+            raise ValueError(
+                f"Training context size mismatch: expected {expected_size}, got {context_path.stat().st_size}"
+            )
     expected_sha = context.get("sha256")
     if not isinstance(expected_sha, str) or len(expected_sha) != 64:
         raise ValueError("Training context SHA-256 is missing or malformed")
