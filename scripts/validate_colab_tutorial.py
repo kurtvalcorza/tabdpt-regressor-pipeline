@@ -95,6 +95,12 @@ def _source_text(nb: dict) -> str:
     return "\n".join(parts)
 
 
+def _require_markers(nb_path: Path, profile: str, source_text: str, required: dict[str, str]) -> None:
+    for label, marker in required.items():
+        if marker not in source_text:
+            raise AssertionError(f"{nb_path.name}: {profile} contract missing {label} ({marker!r})")
+
+
 def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> None:
     dimer = nb.get("metadata", {}).get("dimer", {})
     profile = dimer.get("notebook_profile")
@@ -109,6 +115,13 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     if PLACEHOLDER_PATTERN.search(source_text):
         raise AssertionError(f"{nb_path.name}: unresolved TODO/TBD/FIXME placeholder found")
 
+    common = {
+        "supported Python floor": "Python 3.11+",
+        "runtime Python guard": "sys.version_info < (3, 11)",
+        "point-prediction semantics": "point estimate",
+    }
+    _require_markers(nb_path, profile, source_text, common)
+
     if profile == "E2E":
         required = {
             "BYOD path": "USE_BYOD",
@@ -118,14 +131,19 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
             "machine-readable provenance": "provenance",
             "artifact export": "export_artifact_bundle(",
             "fresh artifact reload": "load_verified_artifact(",
+            "no-refit reload assertion": "preprocessing_restored_",
             "reload equivalence": "assert_allclose(",
             "regression MAE": "mae",
             "regression RMSE": "rmse",
             "regression R2": "r2",
+            "missing-value policy": "numericMissingPolicy",
+            "categorical missing policy": "categoricalMissingPolicy",
+            "unknown-category policy": "unknownCategoryPolicy",
+            "feature ceiling": "modelFeatureCeiling",
+            "feature reduction visibility": "featureReductionActive",
+            "context visibility": "effective support rows",
         }
-        for label, marker in required.items():
-            if marker not in source_text:
-                raise AssertionError(f"{nb_path.name}: E2E contract missing {label} ({marker!r})")
+        _require_markers(nb_path, profile, source_text, required)
         if "smoke tutorial" in source_text.lower():
             raise AssertionError(f"{nb_path.name}: E2E notebook must not identify itself as smoke")
 
@@ -134,16 +152,20 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
             "external upload": "files.upload(",
             "pre-load artifact validation": "validate_artifact_bundle(",
             "verified serving reconstruction": "load_verified_artifact(",
+            "no-refit reload assertion": "preprocessing_restored_",
             "new-data inference": ".predict(",
             "machine-readable predictions": "to_csv(",
             "provenance export": "provenance",
             "trust-boundary explanation": "Trust boundary",
+            "legacy compatibility distinction": "legacy compatibility",
+            "missing-value policy": "numericMissingPolicy",
+            "categorical missing policy": "categoricalMissingPolicy",
+            "unknown-category policy": "unknownCategoryPolicy",
+            "feature ceiling": "modelFeatureCeiling",
+            "feature reduction visibility": "featureReductionActive",
+            "context visibility": "effective support rows",
         }
-        for label, marker in required.items():
-            if marker not in source_text:
-                raise AssertionError(
-                    f"{nb_path.name}: ARTIFACT-INFERENCE contract missing {label} ({marker!r})"
-                )
+        _require_markers(nb_path, profile, source_text, required)
         forbidden = {
             "self-created sample dataset": "load_diabetes(",
             "artifact creation": "export_artifact_bundle(",
