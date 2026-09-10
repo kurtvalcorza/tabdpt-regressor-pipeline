@@ -1,0 +1,14 @@
+# DIMER tutorial runtime pins for TabDPT Regressor.
+# TabDPT core versions follow the upstream v1.2.0 reproduction environment where available.
+faiss-cpu==1.11.0
+huggingface-hub==0.33.2
+numpy==2.3.0
+omegaconf==2.3.0
+pandas==2.3.2
+pyarrow==25.0.0
+safetensors==0.5.3
+scikit-learn==1.7.0
+scipy==1.15.3
+tabdpt==1.2.0
+torch==2.7.1
+tqdm==4.67.1
