@@ -168,9 +168,8 @@ def validate_notebook(nb_path: Path) -> None:
     if not isinstance(nb.get("cells"), list) or not nb["cells"]:
         raise AssertionError(f"{nb_path.name}: must contain notebook cells")
 
-    source_text = _source_text(nb)
-    _validate_profile_contract(nb_path, nb, source_text)
-
+    # Preserve syntax/path failures as the first-order source check. Profile metadata and
+    # higher-level semantic assertions run only after every code cell parses successfully.
     runtime_entrypoint_found = False
     for idx, cell in enumerate(nb.get("cells", [])):
         if cell.get("execution_count") is not None:
@@ -193,6 +192,9 @@ def validate_notebook(nb_path: Path) -> None:
 
         if check_pipeline_use_flash(tree, nb_path.name, idx):
             runtime_entrypoint_found = True
+
+    source_text = _source_text(nb)
+    _validate_profile_contract(nb_path, nb, source_text)
 
     if not runtime_entrypoint_found:
         raise AssertionError(f"{nb_path.name}: supported TabDPT runtime entrypoint was never exercised")
