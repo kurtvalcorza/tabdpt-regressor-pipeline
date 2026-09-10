@@ -18,6 +18,7 @@ from .pipeline import (
 
 ARTIFACT_FORMAT = "tabdpt-dimer-context-v3"
 ARTIFACT_FORMAT_VERSION = 3
+ARTIFACT_SEMANTICS = "support-context-plus-pinned-base-model"
 
 EXPECTED_BASE_MODEL = {
     "repo": TABDPT_HF_REPO,
@@ -83,7 +84,7 @@ def export_artifact_bundle(
         "format": ARTIFACT_FORMAT,
         "formatVersion": ARTIFACT_FORMAT_VERSION,
         "taskType": "tabular_regression",
-        "artifactSemantics": "support-context-plus-pinned-base-model",
+        "artifactSemantics": ARTIFACT_SEMANTICS,
         "targetColumn": pipeline.target_column,
         "dropColumns": list(pipeline.drop_columns_),
         "preprocessing": preprocessing,
@@ -112,6 +113,15 @@ def validate_artifact_bundle(artifact_path: str | Path) -> tuple[dict[str, Any],
         raise ValueError("Artifact manifest must contain a JSON object")
     if manifest.get("format") != ARTIFACT_FORMAT:
         raise ValueError(f"Unsupported artifact format: {manifest.get('format')!r}")
+    if manifest.get("formatVersion") != ARTIFACT_FORMAT_VERSION:
+        raise ValueError(
+            f"Unsupported artifact formatVersion: {manifest.get('formatVersion')!r}; "
+            f"expected {ARTIFACT_FORMAT_VERSION}"
+        )
+    if manifest.get("artifactSemantics") != ARTIFACT_SEMANTICS:
+        raise ValueError(
+            f"Unsupported artifact semantics: {manifest.get('artifactSemantics')!r}"
+        )
     if manifest.get("taskType") != "tabular_regression":
         raise ValueError(f"Artifact taskType mismatch: {manifest.get('taskType')!r}")
 
@@ -141,7 +151,9 @@ def validate_artifact_bundle(artifact_path: str | Path) -> tuple[dict[str, Any],
         raise ValueError(f"Training context must be a regular file: {context_path}")
 
     expected_size = context.get("size")
-    if expected_size is not None and expected_size != context_path.stat().st_size:
+    if not isinstance(expected_size, int) or expected_size < 0:
+        raise ValueError("Training context size is missing or invalid")
+    if expected_size != context_path.stat().st_size:
         raise ValueError(
             f"Training context size mismatch: expected {expected_size}, got {context_path.stat().st_size}"
         )
