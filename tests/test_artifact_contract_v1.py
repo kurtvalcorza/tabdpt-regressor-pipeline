@@ -1,5 +1,9 @@
 import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,6 +13,7 @@ from tabdpt_regressor_pipeline.artifact import (
     ARTIFACT_FORMAT_VERSION,
     EXPECTED_BASE_MODEL,
     export_artifact_bundle,
+    load_verified_artifact,
     validate_artifact_bundle,
 )
 
@@ -24,7 +29,12 @@ def _export_without_model_download(tmp_path):
     pipe = TabDPTRegressionPipeline(use_flash=False)
     pipe.target_column = "target"
     pipe.drop_columns_ = []
-    pipe.feature_encoder.fit(frame.drop(columns=["target"]))
+    encoded = pipe.feature_encoder.fit_transform(frame.drop(columns=["target"]))
+    pipe.estimator = SimpleNamespace(
+        V=None,
+        imputer=SimpleNamespace(statistics_=np.nanmean(encoded, axis=0)),
+        scaler=SimpleNamespace(mean_=np.nanmean(encoded, axis=0), scale_=np.ones(encoded.shape[1])),
+    )
     return export_artifact_bundle(pipe, frame, tmp_path / "artifact")
 
 
@@ -51,6 +61,51 @@ def test_established_v3_runtime_manifest_remains_accepted(tmp_path):
     validated, _ = validate_artifact_bundle(manifest_path)
     assert validated["format"] == ARTIFACT_FORMAT
     assert validated["baseModel"] == EXPECTED_BASE_MODEL
+
+
+def test_explicit_artifact_requires_fitted_upstream_preprocessing_state(tmp_path):
+    manifest_path = _export_without_model_download(tmp_path)
+    manifest = json.loads(manifest_path.read_text())
+    manifest["preprocessing"].pop("upstream")
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="missing fitted upstream preprocessing state"):
+        validate_artifact_bundle(manifest_path)
+
+
+def test_verified_reload_restores_upstream_state_without_fit(tmp_path, monkeypatch):
+    manifest_path = _export_without_model_download(tmp_path)
+
+    class NoRefitEstimator:
+        def __init__(self, *args, **kwargs):
+            self.device = kwargs.get("device") or "cpu"
+            self.missing_indicators = False
+            self.normalizer = "standard"
+            self.feature_reduction = "pca"
+            self.max_features = 128
+            self.V = None
+
+        def fit(self, X, y):
+            raise AssertionError("verified artifact reload must not call estimator.fit")
+
+        def predict(self, X, **kwargs):
+            transformed = self.scaler.transform(self.imputer.transform(X))
+            return transformed.sum(axis=1)
+
+    import tabdpt_regressor_pipeline.artifact as artifact_mod
+
+    monkeypatch.setitem(sys.modules, "tabdpt", SimpleNamespace(TabDPTRegressor=NoRefitEstimator))
+    monkeypatch.setattr(artifact_mod, "resolve_tabdpt_weights", lambda *args, **kwargs: Path("fake.safetensors"))
+
+    restored = load_verified_artifact(manifest_path, compile_model=False, use_flash=False)
+    assert restored.preprocessing_restored_ is True
+    np.testing.assert_allclose(restored.estimator.imputer.statistics_, [2.0, 1.0])
+    np.testing.assert_allclose(restored.estimator.scaler.mean_, [2.0, 1.0])
+    np.testing.assert_allclose(restored.estimator.scaler.scale_, [1.0, 1.0])
+
+    query = pd.DataFrame({"numeric": [4.0], "category": ["02"]})
+    prediction = restored.predict(query, n_ensembles=1, context_size=128, batch_size=1, seed=42)
+    assert prediction.shape == (1,)
 
 
 def test_artifact_rejects_base_model_revision_mismatch(tmp_path):
