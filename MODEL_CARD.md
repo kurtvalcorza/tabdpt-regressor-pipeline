@@ -1,5 +1,6 @@
 ---
 license: apache-2.0
+model_card_spec: "1.0"
 pipeline_tag: tabular-regression
 tags:
   - tabular-regression
@@ -28,7 +29,7 @@ Supervised tabular regression tasks, predicting continuous numerical values from
 
 ###### Primary Intended Users
 
-Machine learning engineers, data scientists, quantitative researchers, and software engineers developing predictive regression pipelines for structured datasets in enterprise, scientific, or academic environments. Users are expected to understand data validation, leakage prevention, distribution shifts, and standard evaluation methodologies.
+Machine learning engineers, data scientists, quantitative researchers, and software engineers developing predictive regression pipelines for structured datasets in enterprise, scientific, or academic environments. The envisioned deployment setting is internal enterprise or research use through the DIMER platform, not a public-facing service. Users are expected to understand data validation, leakage prevention, distribution shift, and standard regression evaluation methodology, and to recognise that the point prediction is a mean-style estimate with no attached interval; a user who cannot tell a held-out evaluation from an in-context evaluation should not be setting operational cutoffs on this pipeline's output.
 
 ###### Out-of-scope use cases
 
@@ -71,7 +72,7 @@ These measures assess both typical error magnitude, outlier sensitivity, and exp
 
 ###### Decision thresholds
 
-In continuous regression, decision thresholds are applied when continuous predictions trigger downstream business actions or gate operational workflows (e.g., setting cutoff boundaries for resource alerts, cost overrun warnings, or establishing tolerance bands such as $\pm 5\%$ error margin).
+The pipeline applies no decision threshold. `predict()` returns the raw continuous estimate as a `pd.Series` named `prediction` (`src/tabdpt_regressor_pipeline/pipeline.py`), and no acceptance threshold on MAE, RMSE, or R² was set during development because the pipeline is domain-agnostic and the tolerable error is a property of the deployment, not of the model. Any cutoff that turns a prediction into an action — a resource alert, a cost-overrun warning, a ±5 % tolerance band — is the deployment owner's to define and to calibrate on their own held-out data. Set it from the asymmetric cost of over- versus under-prediction in the target domain: where an under-estimate is the expensive error, place the cutoff below the point prediction by a margin derived from the held-out residual distribution, and revisit it whenever the input distribution shifts.
 
 ###### Approaches to uncertainty and variability
 
@@ -106,10 +107,11 @@ The model is **not** certified, validated, or intended for autonomous decision-m
 
 ###### Use cases
 
-Disturbing or prohibited use cases include:
+Distinct from the capability and decision boundaries listed under *Out-of-scope use cases*, the developers consider the following uses prohibited even where the model would produce a numerically plausible output:
 - Predictive algorithms designed for exploitative price discrimination or predatory lending.
-- Automated resource allocation systems penalizing protected or vulnerable groups.
-- Generating deceptive analytical forecasts for fraudulent or manipulative purposes.
+- Automated resource-allocation systems that penalise protected or vulnerable groups, including any regression on a target that proxies a protected attribute.
+- Generating deceptive analytical forecasts for fraudulent or manipulative purposes, or presenting the point prediction as a certified measurement.
+- Any use that violates the Apache-2.0 terms of the upstream Layer6/TabDPT weights or the terms of the DIMER deployment.
 
 ---
 
