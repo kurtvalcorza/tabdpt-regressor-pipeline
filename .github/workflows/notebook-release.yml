@@ -164,6 +164,7 @@ jobs:
             echo "- CI integration status: **${INTEGRATION_STATUS}**"
             echo "- This GitHub-hosted Ubuntu/Jupyter run uses a CI-only google.colab.files.upload() shim."
             echo "- It is integration evidence only: it is NOT a Google Colab run and does NOT satisfy the clean supported-Colab release gate tracked by issue #15."
+            echo "- Issue #15 remains open and the tutorial registry remains release candidate until exact-revision clean Colab evidence is recorded."
             echo "- Static checks remain separate and are not treated as runtime integration evidence."
           } >> "$GITHUB_STEP_SUMMARY"
 
