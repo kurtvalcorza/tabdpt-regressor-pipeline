@@ -1,4 +1,4 @@
-name: Notebook release execution
+name: Notebook integration execution
 
 on:
   pull_request:
@@ -32,14 +32,14 @@ jobs:
         with:
           python-version: "3.12.14"
 
-      - name: Prepare clean notebook runtime
+      - name: Prepare clean CI notebook runtime
         run: |
           sudo mkdir -p /content
           sudo chown -R "$USER":"$USER" /content
           python -m pip install --upgrade pip==26.2.1
           python -m pip install nbconvert==7.17.1 ipykernel==7.3.0
 
-      - name: Execute E2E default path from clean state
+      - name: Execute E2E default path in CI
         id: e2e
         run: |
           jupyter nbconvert \
@@ -94,7 +94,7 @@ jobs:
             echo 'COLAB_UPLOAD_QUEUE=[["/content/tabdpt-tutorial-output/artifact/artifact.json","/content/tabdpt-tutorial-output/artifact/training_context.parquet"],["/content/tabdpt-regressor-independent-inference.csv"]]'
           } >> "$GITHUB_ENV"
 
-      - name: Execute artifact-inference notebook against external producer artifact
+      - name: Execute artifact-inference notebook against external producer artifact in CI
         id: artifact-inference
         run: |
           jupyter nbconvert \
@@ -105,7 +105,7 @@ jobs:
             --ExecutePreprocessor.timeout=1800 \
             --ExecutePreprocessor.kernel_name=python3
 
-      - name: Assert release outputs
+      - name: Assert integration outputs
         id: assert-outputs
         run: |
           test -f /content/tabdpt-tutorial-output/artifact/artifact.json
@@ -116,12 +116,12 @@ jobs:
           test -f /content/tabdpt-artifact-inference-output/tabdpt_regression_predictions.csv
           test -f /content/tabdpt-artifact-inference-output/tabdpt_regression_inference_provenance.json
 
-      - name: Upload notebook release evidence
+      - name: Upload notebook integration evidence
         id: upload-evidence
         if: ${{ always() && steps.e2e.outcome == 'success' && steps.prepare-inference.outcome == 'success' && steps.artifact-inference.outcome == 'success' && steps.assert-outputs.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: tabdpt-regressor-notebook-release-evidence
+          name: tabdpt-regressor-notebook-integration-evidence
           path: |
             /content/executed-tabdpt-regressor-e2e.ipynb
             /content/executed-tabdpt-regressor-artifact-inference.ipynb
@@ -136,7 +136,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Record release evidence summary
+      - name: Record integration evidence summary
         if: always()
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
@@ -146,26 +146,28 @@ jobs:
           UPLOAD_OUTCOME: ${{ steps.upload-evidence.outcome }}
         run: |
           if [[ "$E2E_OUTCOME" == "success" && "$PREPARE_OUTCOME" == "success" && "$INFERENCE_OUTCOME" == "success" && "$OUTPUT_OUTCOME" == "success" && "$UPLOAD_OUTCOME" == "success" ]]; then
-            RELEASE_STATUS="PASS"
+            INTEGRATION_STATUS="PASS"
           else
-            RELEASE_STATUS="INCOMPLETE/FAIL"
+            INTEGRATION_STATUS="INCOMPLETE/FAIL"
           fi
           {
-            echo "## TabDPT Regressor Notebook Spec v1 release execution"
+            echo "## TabDPT Regressor Notebook Spec v1 CI integration execution"
             echo
             echo "- Candidate SHA: \`${DIMER_REPO_REF}\`"
             echo "- Runner: \`${RUNNER_OS}\` / \`${RUNNER_ARCH}\`"
             echo "- Python: \`$(python --version 2>&1)\`"
-            echo "- E2E clean execution: \`${E2E_OUTCOME}\`"
+            echo "- E2E CI execution: \`${E2E_OUTCOME}\`"
             echo "- Independent external-input preparation: \`${PREPARE_OUTCOME}\`"
-            echo "- ARTIFACT-INFERENCE execution: \`${INFERENCE_OUTCOME}\`"
+            echo "- ARTIFACT-INFERENCE CI execution: \`${INFERENCE_OUTCOME}\`"
             echo "- Required output assertions: \`${OUTPUT_OUTCOME}\`"
-            echo "- Evidence artifact upload: \`${UPLOAD_OUTCOME}\`"
-            echo "- Release evidence status: **${RELEASE_STATUS}**"
-            echo "- Static checks remain separate and are not treated as execution evidence."
+            echo "- Integration evidence artifact upload: \`${UPLOAD_OUTCOME}\`"
+            echo "- CI integration status: **${INTEGRATION_STATUS}**"
+            echo "- This GitHub-hosted Ubuntu/Jupyter run uses a CI-only google.colab.files.upload() shim."
+            echo "- It is integration evidence only: it is NOT a Google Colab run and does NOT satisfy the clean supported-Colab release gate tracked by issue #15."
+            echo "- Static checks remain separate and are not treated as runtime integration evidence."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fail closed unless execution evidence is complete
+      - name: Fail closed unless integration evidence is complete
         if: always()
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
