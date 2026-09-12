@@ -1,0 +1,184 @@
+name: Notebook integration execution
+
+on:
+  pull_request:
+    paths:
+      - "tutorials/**"
+      - "tabdpt_regressor_pipeline/**"
+      - "scripts/validate_colab_tutorial.py"
+      - ".github/workflows/notebook-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  execute-notebooks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DIMER_REPO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.14"
+
+      - name: Prepare clean CI notebook runtime
+        run: |
+          sudo mkdir -p /content
+          sudo chown -R "$USER":"$USER" /content
+          python -m pip install --upgrade pip==26.2.1
+          python -m pip install nbconvert==7.17.1 ipykernel==7.3.0
+
+      - name: Execute E2E default path in CI
+        id: e2e
+        run: |
+          jupyter nbconvert \
+            --to notebook \
+            --execute tutorials/tabdpt_regressor_colab.ipynb \
+            --output executed-tabdpt-regressor-e2e.ipynb \
+            --output-dir /content \
+            --ExecutePreprocessor.timeout=2400 \
+            --ExecutePreprocessor.kernel_name=python3
+
+      - name: Prepare external artifact input shim and independent inference rows
+        id: prepare-inference
+        run: |
+          mkdir -p /tmp/colab-shim/google/colab
+          cat > /tmp/colab-shim/google/__init__.py <<'PY'
+          from pkgutil import extend_path
+          __path__ = extend_path(__path__, __name__)
+          PY
+          cat > /tmp/colab-shim/google/colab/__init__.py <<'PY'
+          from . import files
+          PY
+          cat > /tmp/colab-shim/google/colab/files.py <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          _queue = None
+          _index = 0
+
+          def upload():
+              global _queue, _index
+              if _queue is None:
+                  _queue = json.loads(os.environ["COLAB_UPLOAD_QUEUE"])
+              if _index >= len(_queue):
+                  raise RuntimeError("No staged CI upload remains for this notebook call.")
+              paths = [Path(p) for p in _queue[_index]]
+              _index += 1
+              missing = [str(p) for p in paths if not p.is_file()]
+              if missing:
+                  raise FileNotFoundError(f"Missing staged CI upload(s): {missing}")
+              return {p.name: p.read_bytes() for p in paths}
+          PY
+          python - <<'PY'
+          from sklearn.datasets import load_diabetes
+          frame = load_diabetes(as_frame=True).frame.drop(columns=["target"]).head(8).copy()
+          # Make the consumer batch distinct from the rows used by the producer sample.
+          frame.iloc[:, 0] = frame.iloc[:, 0] + 1e-7
+          frame.to_csv("/content/tabdpt-regressor-independent-inference.csv", index=False)
+          PY
+          {
+            echo 'PYTHONPATH=/tmp/colab-shim'
+            echo 'COLAB_UPLOAD_QUEUE=[["/content/tabdpt-tutorial-output/artifact/artifact.json","/content/tabdpt-tutorial-output/artifact/training_context.parquet"],["/content/tabdpt-regressor-independent-inference.csv"]]'
+          } >> "$GITHUB_ENV"
+
+      - name: Execute artifact-inference notebook against external producer artifact in CI
+        id: artifact-inference
+        run: |
+          jupyter nbconvert \
+            --to notebook \
+            --execute tutorials/tabdpt_regressor_artifact_inference_colab.ipynb \
+            --output executed-tabdpt-regressor-artifact-inference.ipynb \
+            --output-dir /content \
+            --ExecutePreprocessor.timeout=1800 \
+            --ExecutePreprocessor.kernel_name=python3
+
+      - name: Assert integration outputs
+        id: assert-outputs
+        run: |
+          test -f /content/tabdpt-tutorial-output/artifact/artifact.json
+          test -f /content/tabdpt-tutorial-output/artifact/training_context.parquet
+          test -f /content/tabdpt-tutorial-output/tabdpt_regression_predictions.csv
+          test -f /content/tabdpt-tutorial-output/tabdpt_regression_metrics.json
+          test -f /content/tabdpt-tutorial-output/tabdpt_regression_provenance.json
+          test -f /content/tabdpt-artifact-inference-output/tabdpt_regression_predictions.csv
+          test -f /content/tabdpt-artifact-inference-output/tabdpt_regression_inference_provenance.json
+
+      - name: Upload notebook integration evidence
+        id: upload-evidence
+        if: ${{ always() && steps.e2e.outcome == 'success' && steps.prepare-inference.outcome == 'success' && steps.artifact-inference.outcome == 'success' && steps.assert-outputs.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tabdpt-regressor-notebook-integration-evidence
+          path: |
+            /content/executed-tabdpt-regressor-e2e.ipynb
+            /content/executed-tabdpt-regressor-artifact-inference.ipynb
+            /content/tabdpt-tutorial-output/artifact/artifact.json
+            /content/tabdpt-tutorial-output/artifact/training_context.parquet
+            /content/tabdpt-tutorial-output/tabdpt_regression_predictions.csv
+            /content/tabdpt-tutorial-output/tabdpt_regression_metrics.json
+            /content/tabdpt-tutorial-output/tabdpt_regression_provenance.json
+            /content/tabdpt-artifact-inference-output/tabdpt_regression_predictions.csv
+            /content/tabdpt-artifact-inference-output/tabdpt_regression_inference_provenance.json
+            /content/tabdpt-regressor-independent-inference.csv
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record integration evidence summary
+        if: always()
+        env:
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          PREPARE_OUTCOME: ${{ steps.prepare-inference.outcome }}
+          INFERENCE_OUTCOME: ${{ steps.artifact-inference.outcome }}
+          OUTPUT_OUTCOME: ${{ steps.assert-outputs.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload-evidence.outcome }}
+        run: |
+          if [[ "$E2E_OUTCOME" == "success" && "$PREPARE_OUTCOME" == "success" && "$INFERENCE_OUTCOME" == "success" && "$OUTPUT_OUTCOME" == "success" && "$UPLOAD_OUTCOME" == "success" ]]; then
+            INTEGRATION_STATUS="PASS"
+          else
+            INTEGRATION_STATUS="INCOMPLETE/FAIL"
+          fi
+          {
+            echo "## TabDPT Regressor Notebook Spec v1 CI integration execution"
+            echo
+            echo "- Candidate SHA: \`${DIMER_REPO_REF}\`"
+            echo "- Runner: \`${RUNNER_OS}\` / \`${RUNNER_ARCH}\`"
+            echo "- Python: \`$(python --version 2>&1)\`"
+            echo "- E2E CI execution: \`${E2E_OUTCOME}\`"
+            echo "- Independent external-input preparation: \`${PREPARE_OUTCOME}\`"
+            echo "- ARTIFACT-INFERENCE CI execution: \`${INFERENCE_OUTCOME}\`"
+            echo "- Required output assertions: \`${OUTPUT_OUTCOME}\`"
+            echo "- Integration evidence artifact upload: \`${UPLOAD_OUTCOME}\`"
+            echo "- CI integration status: **${INTEGRATION_STATUS}**"
+            echo "- This GitHub-hosted Ubuntu/Jupyter run uses a CI-only google.colab.files.upload() shim."
+            echo "- It is integration evidence only: it is NOT a Google Colab run and does NOT satisfy the clean supported-Colab release gate tracked by issue #15."
+            echo "- Issue #15 remains open and the tutorial registry remains release candidate until exact-revision clean Colab evidence is recorded."
+            echo "- Static checks remain separate and are not treated as runtime integration evidence."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail closed unless integration evidence is complete
+        if: always()
+        env:
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          PREPARE_OUTCOME: ${{ steps.prepare-inference.outcome }}
+          INFERENCE_OUTCOME: ${{ steps.artifact-inference.outcome }}
+          OUTPUT_OUTCOME: ${{ steps.assert-outputs.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload-evidence.outcome }}
+        run: |
+          [[ "$E2E_OUTCOME" == "success" ]]
+          [[ "$PREPARE_OUTCOME" == "success" ]]
+          [[ "$INFERENCE_OUTCOME" == "success" ]]
+          [[ "$OUTPUT_OUTCOME" == "success" ]]
+          [[ "$UPLOAD_OUTCOME" == "success" ]]
