@@ -1,6 +1,6 @@
 ---
 license: apache-2.0
-model_card_spec: "1.0"
+model_card_spec: "1.1"
 pipeline_tag: tabular-regression
 tags:
   - tabular-regression
@@ -10,12 +10,48 @@ tags:
 base_model: Layer6/TabDPT
 ---
 
-# TabDPT Regressor v1.2
+# TabDPT v1.2 — Tabular Foundation Model (Classifier & Regressor)
 
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Layer6%2FTabDPT-ffcc4d?style=flat)](https://huggingface.co/Layer6/TabDPT)
-[![GitHub](https://img.shields.io/badge/GitHub-layer6ai--labs%2FTabDPT--inference-181717?style=flat&logo=github&logoColor=white)](https://github.com/layer6ai-labs/TabDPT-inference)
-[![arXiv](https://img.shields.io/badge/arXiv-2608.01400-b31b1b.svg)](https://arxiv.org/abs/2608.01400)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Upstream GitHub](https://img.shields.io/badge/Upstream%20GitHub-layer6ai--labs%2FTabDPT--inference-181717?style=flat&logo=github&logoColor=white)](https://github.com/layer6ai-labs/TabDPT-inference)
+[![arXiv Paper](https://img.shields.io/badge/arXiv-2608.01400-b31b1b.svg)](https://arxiv.org/abs/2608.01400)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Classifier Pipeline](https://img.shields.io/badge/Classifier%20Repo-tabdpt--classifier--pipeline-2ea44f?style=flat&logo=github)](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline)
+[![Regressor Pipeline](https://img.shields.io/badge/Regressor%20Repo-tabdpt--regressor--pipeline-0969da?style=flat&logo=github)](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline)
+
+> [!WARNING]
+> ⚠️ **Provided for research, training, and evaluation purposes only.** Model weights are redistributed unmodified under their upstream license, which controls your use, including any commercial use or redistribution; the accompanying code and notebooks are released under this repository's license. All of it is supplied **"as is"**, without warranty of any kind, and has not been validated for production, clinical, or safety-critical use. Running the notebooks downloads third-party weights and datasets governed by their own licenses and consumes compute on your own Colab/Kaggle account. To the maximum extent permitted by law, the maintainers of this repository and the DIMER platform accept no liability for any damages arising from their use. Hosting implies no affiliation with or endorsement by the original authors.
+
+---
+
+## Interactive Colab Tutorials
+
+Both pipeline implementations provide ready-to-run interactive Google Colab notebooks demonstrating full end-to-end training and fresh-process serving artifact inference:
+
+### TabDPT Classifier (`tabdpt-classifier-pipeline`)
+
+- **End-to-End Pipeline Tutorial**:  
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb) [`tabdpt_classifier_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb)  
+  *Install package, fit support table in-context, predict discrete class labels and probabilities, and evaluate test holdout.*
+
+- **Serving Artifact Inference Tutorial**:  
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb) [`tabdpt_classifier_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb)  
+  *Load exported DIMER bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
+
+### TabDPT Regressor (`tabdpt-regressor-pipeline`)
+
+- **End-to-End Pipeline Tutorial**:  
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_colab.ipynb) [`tabdpt_regressor_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_colab.ipynb)  
+  *Install package, fit support table in-context, predict continuous target values, and evaluate regression metrics (MAE, RMSE, R²).*
+
+- **Serving Artifact Inference Tutorial**:  
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb) [`tabdpt_regressor_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb)  
+  *Load exported DIMER bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
+
+> [!NOTE]
+> All tutorial notebooks are configured with `use_flash=False` to ensure portable out-of-the-box execution across Google Colab Tesla T4 accelerators (`sm_75`) as well as modern Ampere/Hopper GPUs (`sm_80+`).
+
+---
 
 ###### Description
 
