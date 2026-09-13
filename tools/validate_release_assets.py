@@ -1,6 +1,6 @@
 """Static release-asset validation for the TabDPT regressor DIMER pipeline.
 
-Checks the two STANDALONE tutorial notebooks (DIMER Notebook Specification 1.1 §3.6) — the `E2E`
+Checks the two STANDALONE tutorial notebooks (DIMER Notebook Specification 2.0 §4) — the `E2E`
 tutorial and its `ARTIFACT-INFERENCE` companion — the tutorial registry, model card, README, STATUS.md
 and weight documentation for source conformance and cross-document identity consistency, and runs the
 generator parity checks (PAR1–PAR3) for every notebook.
@@ -166,10 +166,10 @@ NOTEBOOKS = {
 # ---------------------------------------------------------------------------
 # Shared checks. Everything below is source/structure validation only. Passing
 # these checks is NOT clean-runtime execution evidence under DIMER Notebook
-# Specification 1.1; see docs/release-verification.md for the release gate.
+# Specification 2.0; see docs/release-verification.md for the release gate.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SPEC = "1.1"
+NOTEBOOK_SPEC = "2.0"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 STATUS_TOKENS = ("Candidate", "Release-grade")
 PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|Insert text here|Tooltip:", re.I)
@@ -181,7 +181,7 @@ UNSUPPORTED_CLAIMS = re.compile(
     re.I,
 )
 REQUIRED_CARD_HEADINGS = [
-    (6, "Description"),
+    (4, "Description"),
     (4, "Intended Use and Limitations"),
     (6, "Primary Intended Uses"),
     (6, "Primary Intended Users"),
@@ -225,7 +225,10 @@ COMMON_CODE_MARKERS = (
     "files.upload()",
 )
 COMMON_MARKDOWN_MARKERS = (
-    f"**Notebook specification:** DIMER Notebook Specification {NOTEBOOK_SPEC} — **standalone** (§3.6)",
+    f"**Notebook specification:** DIMER Notebook Specification {NOTEBOOK_SPEC} — **standalone** (§4)",
+    "**Mode:** `",
+    "**Run all:**",
+    "**Bring Your Own Data:**",
     "**This notebook is standalone.**",
     "**Learning objectives:**",
     "## Prerequisites",
@@ -445,6 +448,7 @@ def _validate_notebook_structure(
     _check(profile == spec["profile"], f"{path.name}: profile {profile!r} != declared {spec['profile']!r}")
     version = dimer.get("notebook_spec", dimer.get("notebook_spec_version"))
     _check(version == NOTEBOOK_SPEC, f"{path.name}: metadata.dimer must declare notebook spec version '{NOTEBOOK_SPEC}'")
+    _check(dimer.get("notebook_mode") in ("REFERENCE", "GUIDED", "WORKSHOP"), f"{path.name}: metadata.dimer.notebook_mode must declare a §3.3 pedagogical mode")
     _check(dimer.get("standalone") is True, f"{path.name}: metadata.dimer.standalone must be true (ST6)")
     generated = dimer.get("generated_from")
     _check(isinstance(generated, dict), f"{path.name}: metadata.dimer.generated_from is required (ST5)")

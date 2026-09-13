@@ -38,6 +38,13 @@ TEMPLATE = {
     "stem": "tabdpt_regressor",
     "notebook_name": "tabdpt_regressor_colab.ipynb",
     "profile": "E2E",
+    "mode": "GUIDED",
+    "run_all": (
+        "Selecting **Run all** in a fresh supported runtime installs the pinned dependencies, stages and digest-verifies the pinned TabDPT checkpoint, loads scikit-learn's bundled diabetes table (no download), validates it into an input manifest (finite numeric target) and splits it, fits a training-mean baseline, **adapts TabDPT by in-context conditioning on the training split** (the adaptation stage: TabDPT registers the support rows; it has no gradient fine-tuning route — `fine_tune` is a rejected hyper-parameter), reports the capacity used, evaluates on the held-out split and writes the evaluation report, scores new rows and writes machine-readable outputs, exports the serving artifact and reloads it from disk through `load_verified_artifact` to prove the fresh boundary. No repository clone, DIMER worker or service, credential, upload dialog or configuration edit is required (NOTEBOOK_SPEC 2.0 §5)."
+    ),
+    "byod": (
+        "After the sample workflow completes, set `USE_BYOD = True` in Section 4 and re-run from that cell to upload one labelled CSV (declare `CATEGORICAL_COLUMNS` if any); it enters the same validation, split, mean baseline, in-context conditioning, evaluation, new-data inference, export and fresh-reload cells as the sample (DAT14). Expected schema, ceilings and privacy guidance are stated in the Prerequisites and in Section 4; the upload stays inside this runtime. BYOD is optional and never part of the default path."
+    ),
     "pipeline_class": "TabDPTRegressionPipeline",
     "weights_key": "tabdpt-1.2",
     # generator /2: the whole package is carried — pipeline.py (identity constants, the only `__file__` use:

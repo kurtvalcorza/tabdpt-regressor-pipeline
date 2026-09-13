@@ -4,7 +4,7 @@
 This validator deliberately does not claim runtime execution evidence. It checks notebook JSON,
 profile declarations, Python-cell syntax, portable TabDPT entrypoints, source hygiene, and a small
 set of profile-specific structural invariants that are falsifiable without downloading the model.
-The standalone-carrier and parity checks (NOTEBOOK_SPEC 1.1 §3.6) live in tools/validate_release_assets.py;
+The standalone-carrier and parity checks (NOTEBOOK_SPEC 2.0 §4) live in tools/validate_release_assets.py;
 the notebooks carry the package's modules verbatim in cells tagged ``metadata.dimer.embedded_module``, which
 this script skips for the checks that apply to the notebook's own cells.
 """
@@ -115,10 +115,10 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     profile = dimer.get("notebook_profile")
     if profile not in ALLOWED_PROFILES:
         raise AssertionError(f"{nb_path.name}: missing/invalid metadata.dimer.notebook_profile")
-    if dimer.get("notebook_spec") != "1.1":
-        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '1.1'")
+    if dimer.get("notebook_spec") != "2.0":
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '2.0'")
     if dimer.get("standalone") is not True:
-        raise AssertionError(f"{nb_path.name}: metadata.dimer.standalone must be true (spec 1.1 §3.6)")
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.standalone must be true (spec 2.0 §4)")
     expected = EXPECTED_PROFILES.get(nb_path.name)
     if expected and profile != expected:
         raise AssertionError(f"{nb_path.name}: expected profile {expected}, got {profile}")

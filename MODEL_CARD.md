@@ -8,6 +8,8 @@ tags:
   - in-context-learning
   - tabdpt
 base_model: Layer6/TabDPT
+date_published: "2025-06-18"
+date_published_source: "Hugging Face Hub repository creation date of the exact hosted checkpoint (`createdAt`, https://huggingface.co/api/models/Layer6/TabDPT)"
 ---
 
 # TabDPT v1.2 — Tabular Foundation Model (Classifier & Regressor)
@@ -17,7 +19,6 @@ base_model: Layer6/TabDPT
 [![arXiv Paper](https://img.shields.io/badge/arXiv-2608.01400-b31b1b.svg)](https://arxiv.org/abs/2608.01400)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Classifier Pipeline](https://img.shields.io/badge/Classifier%20Repo-tabdpt--classifier--pipeline-2ea44f?style=flat&logo=github)](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline)
-[![Regressor Pipeline](https://img.shields.io/badge/Regressor%20Repo-tabdpt--regressor--pipeline-0969da?style=flat&logo=github)](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline)
 
 > [!WARNING]
 > ⚠️ **Provided for research, training, and evaluation purposes only.** Model weights are redistributed unmodified under their upstream license, which controls your use, including any commercial use or redistribution; the accompanying code and notebooks are released under this repository's license. All of it is supplied **"as is"**, without warranty of any kind, and has not been validated for production, clinical, or safety-critical use. Running the notebooks downloads third-party weights and datasets governed by their own licenses and consumes compute on your own Colab/Kaggle account. To the maximum extent permitted by law, the maintainers of this repository and the DIMER platform accept no liability for any damages arising from their use. Hosting implies no affiliation with or endorsement by the original authors.
@@ -53,7 +54,7 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
 
 ---
 
-###### Description
+#### Description
 
 TabDPT v1.2, released as **TabDPT-Turbo**, is an open-weight tabular foundation model designed for in-context supervised regression on structured datasets. Rather than iteratively training neural network weights or tree ensembles on each new dataset via gradient descent or heuristic splits, TabDPT processes a labelled support table (the in-context prompt) containing continuous targets alongside unlabelled test observations through a specialized tabular Transformer architecture. Task adaptation occurs entirely at inference time through in-context forward evaluation without gradient updates or per-dataset training loops. For single-context queries without ensembling, inference requires only a forward evaluation; when ensembling over multiple support subsets (`n_ensembles > 1`) or batching query chunks, predictions are aggregated across multiple forward passes. Pretrained on a diverse corpus of real-world tabular datasets and optimized with FlashAttention and key-value caching in v1.2 (Turbo), it delivers rapid, zero-shot tabular regression without per-dataset hyperparameter tuning. This repository packages the upstream regression estimator for reproducible, DIMER-ready deployment.
 
