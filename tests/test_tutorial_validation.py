@@ -1,17 +1,18 @@
 import ast
 import json
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.validate_colab_tutorial import (
-    clean_code_for_ast,
-    check_pipeline_use_flash,
+from scripts.validate_colab_tutorial import (  # noqa: E402 -- sys.path is prepared above
     check_absolute_paths,
+    check_pipeline_use_flash,
+    clean_code_for_ast,
     validate_notebook,
 )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +13,24 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 TABDPT_PACKAGE_VERSION = "1.2.0"
 TABDPT_UPSTREAM_CODE_COMMIT = "9cfb05e0a6bc380ae6c99c08adc8d50dacd4f246"
-TABDPT_HF_REPO = "Layer6/TabDPT"
-TABDPT_HF_REVISION = "4462ffbd1d8dea25d4862d30beed4b70cd596ae5"
+
+# Fleet snapshot identity (DIMER Notebook Specification 1.1, ST3/MOD13). The pinned upstream model is
+# unchanged; these are the fleet-standard names for the same repository, revision, license and snapshot
+# key. The TABDPT_* spellings below stay as the package's published names and alias these constants.
+MODEL_ID = "Layer6/TabDPT"
+MODEL_REVISION = "4462ffbd1d8dea25d4862d30beed4b70cd596ae5"
+MODEL_LICENSE = "apache-2.0"
+MODEL_KEY = "tabdpt-1.2"
+MANIFEST_NAME = "dimer-base-manifest.json"
+DEFAULT_WEIGHTS_DIR = Path(__file__).resolve().parents[2] / "weights" / MODEL_KEY
+
+TABDPT_HF_REPO = MODEL_ID
+TABDPT_HF_REVISION = MODEL_REVISION
 TABDPT_WEIGHT_FILENAME = "tabdpt1_2.safetensors"
 TABDPT_WEIGHT_SHA256 = "06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd"
+
+MIN_DISTINCT_TARGETS = 2  # `fit` refuses a constant target (R² would be undefined)
+METRIC_IDS = ("mae", "rmse", "r2")  # the ids `evaluate` reports (target units, target units, unitless)
 
 
 def sha256_file(path: str | Path) -> str:
@@ -43,6 +58,86 @@ def resolve_tabdpt_weights(model_weight_path: str | Path | None = None, cache_di
             f"TabDPT weight SHA-256 mismatch: expected {TABDPT_WEIGHT_SHA256}, got {actual}"
         )
     return path
+
+
+def verify_snapshot(path: str | Path | None = None) -> dict[str, Any]:
+    """Check a local pinned snapshot against its manifest; raise naming the first mismatch.
+
+    The manifest is the parity anchor the standalone tutorial carries inline (NOTEBOOK_SPEC 1.1 ST3).
+    The package's own ``TABDPT_WEIGHT_SHA256`` is not replaced by it: the manifest entry for
+    ``TABDPT_WEIGHT_FILENAME`` must equal that constant, so the two can never diverge silently.
+    """
+    root = Path(path or DEFAULT_WEIGHTS_DIR)
+    manifest_path = root / MANIFEST_NAME
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"snapshot manifest not found: {manifest_path}")
+    with open(manifest_path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if manifest.get("modelId") != MODEL_ID:
+        raise ValueError(f"manifest modelId {manifest.get('modelId')!r} != {MODEL_ID!r}")
+    if manifest.get("revision") != MODEL_REVISION:
+        raise ValueError(f"manifest revision {manifest.get('revision')!r} != {MODEL_REVISION!r}")
+    entries = manifest.get("files", [])
+    declared = {entry["path"]: entry["sha256"] for entry in entries}
+    if declared.get(TABDPT_WEIGHT_FILENAME) != TABDPT_WEIGHT_SHA256:
+        raise ValueError(
+            f"manifest {TABDPT_WEIGHT_FILENAME} sha256 {declared.get(TABDPT_WEIGHT_FILENAME)!r} "
+            f"!= TABDPT_WEIGHT_SHA256 {TABDPT_WEIGHT_SHA256!r}"
+        )
+    for entry in entries:
+        file_path = root / entry["path"]
+        if not file_path.is_file():
+            raise FileNotFoundError(f"snapshot file missing: {file_path}")
+        size = file_path.stat().st_size
+        if size != entry["bytes"]:
+            raise ValueError(f"{entry['path']}: size {size} != manifest {entry['bytes']}")
+        digest = sha256_file(file_path)
+        if digest != entry["sha256"]:
+            raise ValueError(f"{entry['path']}: sha256 {digest} != manifest {entry['sha256']}")
+    return {"path": str(root), **manifest}
+
+
+def _hub_download(relative_path: str, root: Path) -> None:
+    """Fetch one manifest-listed file at MODEL_REVISION straight into the snapshot directory."""
+    hf_hub_download(
+        repo_id=MODEL_ID,
+        filename=relative_path,
+        revision=MODEL_REVISION,
+        local_dir=str(root),
+    )
+
+
+def stage_missing_files(
+    path: str | Path | None = None,
+    *,
+    allow_download: bool = False,
+    downloader: Callable[[str, Path], None] | None = None,
+) -> list[str]:
+    """Fetch manifest-listed files that are absent locally (a clone commits the manifest but
+    git-ignores the checkpoint). Returns the relative paths fetched; ``verify_snapshot`` still runs after."""
+    root = Path(path) if path is not None else DEFAULT_WEIGHTS_DIR
+    manifest_path = root / MANIFEST_NAME
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"manifest not found: {manifest_path}")
+    with open(manifest_path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if manifest.get("modelId") != MODEL_ID or manifest.get("revision") != MODEL_REVISION:
+        raise ValueError(
+            f"manifest names {manifest.get('modelId')}@{manifest.get('revision')}, "
+            f"package pins {MODEL_ID}@{MODEL_REVISION}; refusing to stage"
+        )
+    missing = [entry["path"] for entry in manifest["files"] if not (root / entry["path"]).is_file()]
+    if not missing:
+        return []
+    if not allow_download:
+        raise FileNotFoundError(
+            f"snapshot at {root} is missing {missing}; "
+            f"pass allow_download=True to fetch them at {MODEL_REVISION}"
+        )
+    fetch = downloader or _hub_download
+    for relative_path in missing:
+        fetch(relative_path, root)
+    return missing
 
 
 def _resolve_use_flash(requested: bool | None, device: str | None) -> bool:
@@ -74,7 +169,7 @@ class TabularFeatureEncoder:
         self.category_maps: dict[str, dict[str, int]] = {}
         self.is_fitted = False
 
-    def fit(self, frame: pd.DataFrame) -> "TabularFeatureEncoder":
+    def fit(self, frame: pd.DataFrame) -> TabularFeatureEncoder:
         if frame.columns.duplicated().any():
             raise ValueError("Duplicate feature column names are not supported")
         if frame.shape[1] == 0:
@@ -112,7 +207,7 @@ class TabularFeatureEncoder:
         }
 
     @classmethod
-    def from_state(cls, state: dict[str, Any]) -> "TabularFeatureEncoder":
+    def from_state(cls, state: dict[str, Any]) -> TabularFeatureEncoder:
         if not isinstance(state, dict) or state.get("schemaVersion") != cls.STATE_SCHEMA_VERSION:
             raise ValueError("Unsupported feature-encoder state schema")
         feature_columns = state.get("featureColumns")
@@ -195,6 +290,232 @@ def _set_deterministic_seed(seed: int | None) -> None:
         pass
 
 
+INPUT_SCHEMA: dict[str, Any] = {
+    "input": (
+        "pandas.DataFrame, one row per example; feature columns of any dtype plus, for fit/evaluate, "
+        "a numeric target column"
+    ),
+    "columns": "unique column names; `drop_columns` are removed before encoding",
+    "target": "numeric, finite, no missing values, at least MIN_DISTINCT_TARGETS distinct values",
+    "distinct_targets": [MIN_DISTINCT_TARGETS, None],
+    "features": [1, None],
+    "inference_input": (
+        "exactly the fitted feature columns (after `drop_columns`), no target or output columns"
+    ),
+    "preprocessing": (
+        "numeric columns are kept (NaN passes to TabDPT's support-fitted mean imputer); other columns "
+        "are mapped to fitted integer codes with dedicated missing and unknown codes; upstream "
+        "standardisation and any PCA basis are fitted on the support rows and reused at inference"
+    ),
+}
+
+
+def _check_fit_inputs(
+    frame: pd.DataFrame, target_column: str, drop_columns: Sequence[str] | None
+) -> tuple[list[str], pd.DataFrame, pd.Series]:
+    """The checks `fit` applies, in `fit`'s order, raising `fit`'s errors; returns what `fit` derives."""
+    if frame.columns.duplicated().any():
+        raise ValueError("Duplicate column names are not supported")
+    if target_column not in frame.columns:
+        raise ValueError(f"Target column {target_column!r} not found")
+    drops = list(dict.fromkeys(c for c in (drop_columns or []) if c != target_column))
+    raw_target = frame[target_column]
+    target = pd.to_numeric(raw_target, errors="coerce")
+    invalid = raw_target.notna() & target.isna()
+    if invalid.any():
+        examples = raw_target[invalid].astype(str).head(5).tolist()
+        raise ValueError(f"Regression target contains non-numeric values: {examples}")
+    if target.isna().any() or not np.isfinite(target.to_numpy(dtype=np.float64)).all():
+        raise ValueError("Regression target must be finite and non-missing")
+    if target.nunique() < MIN_DISTINCT_TARGETS:
+        raise ValueError("Regression target must not be constant")
+    features = frame.drop(columns=[target_column, *drops], errors="ignore")
+    if features.shape[1] == 0:
+        raise ValueError("At least one feature column is required")
+    return drops, features, target
+
+
+def _check_inference_inputs(
+    frame: pd.DataFrame, required: Sequence[str], drop_columns: Sequence[str]
+) -> pd.DataFrame:
+    """The schema check `predict` applies to an inference table; returns the ordered feature frame."""
+    effective = frame.drop(columns=list(drop_columns), errors="ignore")
+    missing = [col for col in required if col not in effective.columns]
+    extra = [col for col in effective.columns if col not in required]
+    if missing or extra:
+        raise ValueError(f"Feature schema mismatch; missing={missing}, extra={extra}")
+    return effective.loc[:, list(required)]
+
+
+def validate_inputs(
+    frame: pd.DataFrame,
+    target_column: str | None = "target",
+    drop_columns: Sequence[str] | None = None,
+    *,
+    feature_columns: Sequence[str] | None = None,
+    names: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """Validation stage: return the input manifest (schema, observed table properties, verdict).
+
+    With a ``target_column`` the table is checked exactly as ``fit`` checks it; with
+    ``target_column=None`` it is an inference table checked against ``feature_columns`` (the fitted
+    schema) exactly as ``predict`` checks it. Rejection is reported by raising the same error the
+    core method raises; a caller that wants the finding recorded catches it and stores ``str(exc)``.
+    """
+    if names is not None and len(names) != 1:
+        raise ValueError("names must have exactly one entry (the table's id)")
+    table_id = names[0] if names else "table-0"
+    if target_column is None:
+        if feature_columns is None:
+            raise ValueError("feature_columns is required to validate an inference table")
+        drops = list(drop_columns or [])
+        checked = _check_inference_inputs(frame, list(feature_columns), drops)
+        missing_counts = checked.isna().sum()
+        entry: dict[str, Any] = {
+            "id": table_id,
+            "mode": "inference",
+            "rows": len(checked),
+            "feature_columns": list(checked.columns),
+            "missing_value_columns": {str(col): int(n) for col, n in missing_counts.items() if n > 0},
+        }
+    else:
+        drops, features, target = _check_fit_inputs(frame, target_column, drop_columns)
+        numeric = [col for col in features.columns if pd.api.types.is_numeric_dtype(features[col])]
+        missing_counts = features.isna().sum()
+        values = target.to_numpy(dtype=np.float64)
+        entry = {
+            "id": table_id,
+            "mode": "fit",
+            "rows": len(frame),
+            "feature_columns": list(features.columns),
+            "numeric_columns": numeric,
+            "categorical_columns": [col for col in features.columns if col not in numeric],
+            "missing_value_columns": {str(col): int(n) for col, n in missing_counts.items() if n > 0},
+            "target_summary": {
+                "min": float(values.min()),
+                "max": float(values.max()),
+                "mean": float(values.mean()),
+                "distinct": int(target.nunique()),
+            },
+        }
+    return {
+        "schema": dict(INPUT_SCHEMA),
+        "inputs": [entry],
+        "target_column": target_column,
+        "drop_columns": drops,
+        "verdict": "accepted",
+        "findings": [],
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+    }
+
+
+def training_mean_baseline(
+    support_targets: Sequence[Any], holdout_targets: Sequence[Any]
+) -> dict[str, float]:
+    """The trivial baseline `evaluate` is compared against: always predict the support mean.
+
+    The metric ids and their definitions are the ones ``evaluate`` reports (MAE and RMSE in target
+    units, R² relative to the holdout's own mean, so the baseline's R² is at most 0).
+    """
+    support = pd.to_numeric(pd.Series(list(support_targets)), errors="coerce")
+    holdout = pd.to_numeric(pd.Series(list(holdout_targets)), errors="coerce")
+    for name, series in (("support_targets", support), ("holdout_targets", holdout)):
+        if series.empty or series.isna().any() or not np.isfinite(series.to_numpy(dtype=np.float64)).all():
+            raise ValueError(f"{name} must be non-empty, numeric and finite")
+    if holdout.nunique() < MIN_DISTINCT_TARGETS:
+        raise ValueError("Regression evaluation target must not be constant because R² is undefined")
+    y_true = holdout.to_numpy(dtype=np.float64)
+    constant = np.full(len(y_true), float(support.mean()))
+    return {
+        "mae": float(mean_absolute_error(y_true, constant)),
+        "rmse": float(np.sqrt(mean_squared_error(y_true, constant))),
+        "r2": float(r2_score(y_true, constant)),
+    }
+
+
+def evaluation_report(
+    metrics: Mapping[str, float] | None,
+    *,
+    baseline: Mapping[str, float] | None = None,
+    n_holdout: int | None = None,
+    target_column: str | None = None,
+    sample_kind: str = "sample",
+    estimation: str = "single seeded random holdout; no dispersion estimate",
+) -> dict[str, Any]:
+    """Evaluation stage: a machine-readable report even when nothing is measurable.
+
+    ``metrics`` is the dict ``evaluate`` returns (ids ``mae``, ``rmse``, ``r2``) and ``baseline`` the
+    dict ``training_mean_baseline`` returns; the report is ``sample-sanity`` evidence. Without metrics
+    (no labelled holdout) the verdict is ``not-measurable`` and the report says what labelled data would
+    make the task measurable.
+    """
+    base: dict[str, Any] = {
+        "task": "tabular regression by in-context conditioning on labelled support rows",
+        "score_semantics": (
+            "continuous point predictions in target units; no per-prediction uncertainty interval is produced"
+        ),
+        "sample_kind": sample_kind,
+        "n_holdout": n_holdout,
+        "target_column": target_column,
+        "baselines": [],
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+    }
+    if metrics is None:
+        return {
+            **base,
+            "metrics": [],
+            "verdict": "not-measurable",
+            "reason": "no labelled holdout rows were supplied for the scored table",
+            "needs": (
+                "a labelled holdout table with a finite, non-constant numeric target column, scored with "
+                "`evaluate` (mae, rmse, r2) against `training_mean_baseline`; an independent test set from "
+                "the deployment domain for any generalisable claim, and calibration data before any "
+                "prediction interval is attached"
+            ),
+        }
+    unknown = sorted(set(metrics) - set(METRIC_IDS))
+    if unknown:
+        raise ValueError(f"unknown metric ids {unknown}; `evaluate` reports {list(METRIC_IDS)}")
+    units = {"mae": "target units", "rmse": "target units", "r2": "unitless (1 - SSE/SST)"}
+    reported = [
+        {
+            "id": metric_id,
+            "value": float(metrics[metric_id]),
+            "units": units[metric_id],
+            "higher_is_better": metric_id == "r2",
+            "estimation": estimation,
+        }
+        for metric_id in METRIC_IDS
+        if metric_id in metrics
+    ]
+    baselines = []
+    if baseline is not None:
+        baselines.append(
+            {
+                "id": "training_mean",
+                "metrics": [
+                    {"id": metric_id, "value": float(baseline[metric_id])}
+                    for metric_id in METRIC_IDS
+                    if metric_id in baseline
+                ],
+            }
+        )
+    rows = "an unstated number of" if n_holdout is None else str(n_holdout)
+    return {
+        **base,
+        "metrics": reported,
+        "baselines": baselines,
+        "verdict": "sample-sanity",
+        "reason": f"{rows} labelled holdout row(s) from one seeded split; tutorial evidence, not a benchmark",
+        "needs": (
+            "an independent, domain-representative labelled test set for any generalisable quality "
+            "claim; the point predictions carry no uncertainty interval"
+        ),
+    }
+
+
 class TabDPTRegressionPipeline:
     def __init__(
         self,
@@ -217,6 +538,28 @@ class TabDPTRegressionPipeline:
         self.target_column: str | None = None
         self.drop_columns_: list[str] = []
         self.estimator: Any | None = None
+        self.source: str = "local-snapshot" if model_weight_path is not None else "hf-cache"
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        weights_dir: str | Path | None = None,
+        allow_download: bool = False,
+        **kwargs: Any,
+    ) -> TabDPTRegressionPipeline:
+        """Build a pipeline whose base checkpoint is the digest-verified snapshot in ``weights_dir``.
+
+        Stages only the manifest entries that are absent (at ``MODEL_REVISION``), re-hashes every entry
+        against the manifest, and then pins ``model_weight_path`` to the verified file, so the in-context
+        ``fit`` that follows can load nothing else. No model is loaded here.
+        """
+        root = Path(weights_dir or DEFAULT_WEIGHTS_DIR)
+        stage_missing_files(root, allow_download=allow_download)
+        verify_snapshot(root)
+        weight_path = root / TABDPT_WEIGHT_FILENAME
+        pipeline = cls(model_weight_path=weight_path, **kwargs)
+        pipeline.source = "local-snapshot"
+        return pipeline
 
     def fit(
         self,
@@ -225,25 +568,12 @@ class TabDPTRegressionPipeline:
         drop_columns: list[str] | None = None,
         seed: int | None = None,
     ):
-        if frame.columns.duplicated().any():
-            raise ValueError("Duplicate column names are not supported")
-        if target_column not in frame.columns:
-            raise ValueError(f"Target column {target_column!r} not found")
+        # The same checks `validate_inputs` applies (one shared function, so they cannot diverge).
+        drops, features, target = _check_fit_inputs(frame, target_column, drop_columns)
         if seed is not None:
             self.seed = seed
         _set_deterministic_seed(self.seed)
-        self.drop_columns_ = list(dict.fromkeys(c for c in (drop_columns or []) if c != target_column))
-        raw_target = frame[target_column]
-        target = pd.to_numeric(raw_target, errors="coerce")
-        invalid = raw_target.notna() & target.isna()
-        if invalid.any():
-            examples = raw_target[invalid].astype(str).head(5).tolist()
-            raise ValueError(f"Regression target contains non-numeric values: {examples}")
-        if target.isna().any() or not np.isfinite(target.to_numpy(dtype=np.float64)).all():
-            raise ValueError("Regression target must be finite and non-missing")
-        if target.nunique() < 2:
-            raise ValueError("Regression target must not be constant")
-        features = frame.drop(columns=[target_column, *self.drop_columns_], errors="ignore")
+        self.drop_columns_ = drops
         X = self.feature_encoder.fit_transform(features)
         y = target.to_numpy(dtype=np.float64)
         weights = resolve_tabdpt_weights(self.model_weight_path, self.cache_dir)
@@ -306,7 +636,7 @@ class TabDPTRegressionPipeline:
         context_frame: pd.DataFrame,
         preprocessing_state: dict[str, Any],
         seed: int | None = None,
-    ) -> "TabDPTRegressionPipeline":
+    ) -> TabDPTRegressionPipeline:
         """Condition the pipeline on an in-context support table using restored preprocessing state without refitting."""
         if not isinstance(preprocessing_state, dict) or preprocessing_state.get("schemaVersion") != 1:
             raise ValueError("Unsupported preprocessing state schemaVersion")
@@ -393,7 +723,7 @@ class TabDPTRegressionPipeline:
         compile_model: bool = False,
         verbose: bool = False,
         seed: int | None = None,
-    ) -> "TabDPTRegressionPipeline":
+    ) -> TabDPTRegressionPipeline:
         """Load a DIMER serving artifact bundle, restoring preprocessing from manifest without refitting."""
         artifact_file = Path(artifact_path)
         if not artifact_file.is_file():
@@ -464,13 +794,7 @@ class TabDPTRegressionPipeline:
             raise RuntimeError("Pipeline is not fitted")
 
     def _feature_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
-        effective = frame.drop(columns=self.drop_columns_, errors="ignore")
-        required = self.feature_encoder.feature_columns
-        missing = [col for col in required if col not in effective.columns]
-        extra = [col for col in effective.columns if col not in required]
-        if missing or extra:
-            raise ValueError(f"Feature schema mismatch; missing={missing}, extra={extra}")
-        return effective.loc[:, required]
+        return _check_inference_inputs(frame, self.feature_encoder.feature_columns, self.drop_columns_)
 
     def predict(
         self,

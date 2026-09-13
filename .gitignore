@@ -8,3 +8,12 @@ build/
 *.safetensors
 models/
 artifacts/
+
+# Model weights are pulled locally; only the snapshot manifest and small config files are committable
+weights/**/*.safetensors
+weights/**/*.ckpt
+weights/**/*.bin
+weights/**/*.pt
+weights/**/*.pth
+weights/**/*.onnx
+weights/**/.cache/

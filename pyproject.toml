@@ -7,14 +7,25 @@ name = "tabdpt-regressor-pipeline"
 version = "0.1.0"
 description = "DIMER-ready TabDPT v1.2 regression integration"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
+# Exact runtime pins (NOTEBOOK_SPEC 1.1 ENV2/PAR2): the standalone tutorial notebooks carry this list
+# verbatim as their inline PINS. It is the tutorial lock set (tutorials/requirements-colab.txt, the
+# upstream v1.2.0 reproduction environment where available; numpy 2.3.0 needs Python >=3.11) with
+# huggingface-hub at the fleet pin.
 dependencies = [
-  "numpy>=1.25,<3",
-  "pandas>=2.0,<3",
-  "scikit-learn>=1.4,<2",
-  "huggingface-hub>=0.33.2,<2",
-  "pyarrow>=25.0,<26"
+  "tabdpt==1.2.0",
+  "torch==2.7.1",
+  "faiss-cpu==1.11.0",
+  "huggingface-hub==0.36.2",
+  "numpy==2.3.0",
+  "omegaconf==2.3.0",
+  "pandas==2.3.2",
+  "pyarrow==25.0.0",
+  "safetensors==0.5.3",
+  "scikit-learn==1.7.0",
+  "scipy==1.15.3",
+  "tqdm==4.67.1",
 ]
 
 [project.optional-dependencies]
@@ -27,3 +38,13 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# E501: this repository predates the fleet lint config; existing lines run to 145+ columns. Keep new code at 110.
+ignore = ["E501"]

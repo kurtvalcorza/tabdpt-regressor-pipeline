@@ -11,7 +11,7 @@ base_model: Layer6/TabDPT
 
 # TabDPT v1.2 Foundation Model Weights
 
-This directory documents and stages the model weights for TabDPT v1.2 (TabDPT-Turbo).
+This directory documents and stages the model weights for TabDPT v1.2 (TabDPT-Turbo). The pinned snapshot lives in `weights/tabdpt-1.2/` (the package's `MODEL_KEY`): the committed `dimer-base-manifest.json` there lists the checkpoint's path, byte size and SHA-256 (asserted equal to the package's `TABDPT_WEIGHT_SHA256`), the checkpoint itself is git-ignored, and `TabDPTRegressionPipeline.from_pretrained(weights_dir=...)` stages what is missing at the pinned revision (`allow_download=True`) and re-hashes every entry before pinning the file as the base checkpoint.
 
 ## Weight Artifact Details
 
@@ -29,10 +29,10 @@ In air-gapped or network-restricted environments, stage the verified safetensors
 
 ```bash
 # Option 1: Download via huggingface_hub
-python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='Layer6/TabDPT', filename='tabdpt1_2.safetensors', revision='4462ffbd1d8dea25d4862d30beed4b70cd596ae5', local_dir='weights')"
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='Layer6/TabDPT', filename='tabdpt1_2.safetensors', revision='4462ffbd1d8dea25d4862d30beed4b70cd596ae5', local_dir='weights/tabdpt-1.2')"
 
 # Option 2: Direct URL download
-curl -L -o weights/tabdpt1_2.safetensors https://huggingface.co/Layer6/TabDPT/resolve/4462ffbd1d8dea25d4862d30beed4b70cd596ae5/tabdpt1_2.safetensors
+curl -L -o weights/tabdpt-1.2/tabdpt1_2.safetensors https://huggingface.co/Layer6/TabDPT/resolve/4462ffbd1d8dea25d4862d30beed4b70cd596ae5/tabdpt1_2.safetensors
 ```
 
 ## Integrity Verification
@@ -55,5 +55,5 @@ def verify_weight(path: Path) -> bool:
     print(f"Verified {path.name}: {observed}")
     return True
 
-verify_weight(Path("weights/tabdpt1_2.safetensors"))
+verify_weight(Path("weights/tabdpt-1.2/tabdpt1_2.safetensors"))
 ```

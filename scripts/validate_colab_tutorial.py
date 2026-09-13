@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Statically validate DIMER Colab tutorials against notebook-spec v1 source contracts.
+"""Statically validate the DIMER tutorials against notebook-spec 1.1 source contracts (repository checks).
 
 This validator deliberately does not claim runtime execution evidence. It checks notebook JSON,
 profile declarations, Python-cell syntax, portable TabDPT entrypoints, source hygiene, and a small
 set of profile-specific structural invariants that are falsifiable without downloading the model.
+The standalone-carrier and parity checks (NOTEBOOK_SPEC 1.1 §3.6) live in tools/validate_release_assets.py;
+the notebooks carry the package's modules verbatim in cells tagged ``metadata.dimer.embedded_module``, which
+this script skips for the checks that apply to the notebook's own cells.
 """
 from __future__ import annotations
 
@@ -70,7 +73,7 @@ def check_pipeline_use_flash(tree: ast.AST, filename: str, cell_idx: int) -> boo
         if not isinstance(node, ast.Call):
             continue
         name = _call_name(node)
-        if name in {"TabDPTRegressionPipeline", "load_verified_artifact"}:
+        if name in {"TabDPTRegressionPipeline", "from_pretrained", "load_verified_artifact"}:
             found_call = True
             _requires_use_flash_false(node, filename, cell_idx)
     return found_call
@@ -87,9 +90,15 @@ def check_absolute_paths(code: str, filename: str, cell_idx: int) -> None:
                 )
 
 
-def _source_text(nb: dict) -> str:
+def _is_embedded(cell: dict) -> bool:
+    return bool(cell.get("metadata", {}).get("dimer", {}).get("embedded_module"))
+
+
+def _source_text(nb: dict, *, outside_modules: bool = False) -> str:
     parts: list[str] = []
     for cell in nb.get("cells", []):
+        if outside_modules and _is_embedded(cell):
+            continue
         source = cell.get("source", "")
         parts.append("".join(source) if isinstance(source, list) else str(source))
     return "\n".join(parts)
@@ -106,8 +115,10 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     profile = dimer.get("notebook_profile")
     if profile not in ALLOWED_PROFILES:
         raise AssertionError(f"{nb_path.name}: missing/invalid metadata.dimer.notebook_profile")
-    if dimer.get("notebook_spec") != "1.0":
-        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '1.0'")
+    if dimer.get("notebook_spec") != "1.1":
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '1.1'")
+    if dimer.get("standalone") is not True:
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.standalone must be true (spec 1.1 §3.6)")
     expected = EXPECTED_PROFILES.get(nb_path.name)
     if expected and profile != expected:
         raise AssertionError(f"{nb_path.name}: expected profile {expected}, got {profile}")
@@ -117,7 +128,7 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
 
     common = {
         "supported Python floor": "Python 3.11+",
-        "runtime Python guard": "sys.version_info < (3, 11)",
+        "standalone carrier statement": "**This notebook is standalone.**",
         "point-prediction semantics": "point estimate",
     }
     _require_markers(nb_path, profile, source_text, common)
@@ -171,8 +182,9 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
             "artifact creation": "export_artifact_bundle(",
             "in-notebook support fitting": ".fit(",
         }
+        own_cells = _source_text(nb, outside_modules=True)  # the carried package defines these names
         for label, marker in forbidden.items():
-            if marker in source_text:
+            if marker in own_cells:
                 raise AssertionError(
                     f"{nb_path.name}: ARTIFACT-INFERENCE must not perform {label} ({marker!r})"
                 )
@@ -198,8 +210,8 @@ def validate_notebook(nb_path: Path) -> None:
             raise AssertionError(f"{nb_path.name} (cell {idx}): execution_count must be cleared")
         if cell.get("outputs") not in (None, []):
             raise AssertionError(f"{nb_path.name} (cell {idx}): persisted outputs must be cleared")
-        if cell.get("cell_type") != "code":
-            continue
+        if cell.get("cell_type") != "code" or _is_embedded(cell):
+            continue  # carried package cells are checked by tools/validate_release_assets.py (PAR1)
         src = cell.get("source", "")
         code = "".join(src) if isinstance(src, list) else str(src)
         if not code.strip():
