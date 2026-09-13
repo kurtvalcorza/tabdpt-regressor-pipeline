@@ -100,7 +100,7 @@ class DimerRuntimeConfig:
     @classmethod
     def from_payloads(
         cls, preprocessing: dict[str, Any] | None = None, hyperparameters: dict[str, Any] | None = None
-    ) -> "DimerRuntimeConfig":
+    ) -> DimerRuntimeConfig:
         pre = dict(preprocessing or {})
         hp = dict(hyperparameters or {})
         _reject_unknown(pre, SUPPORTED_PREPROCESSING_KEYS, "preprocessing")
@@ -131,7 +131,7 @@ class DimerRuntimeConfig:
         )
 
     @classmethod
-    def from_environment(cls) -> "DimerRuntimeConfig":
+    def from_environment(cls) -> DimerRuntimeConfig:
         return cls.from_payloads(
             _json_object(os.getenv("DIMER_PREPROCESSING_ARGS_JSON"), "DIMER_PREPROCESSING_ARGS_JSON"),
             _json_object(os.getenv("DIMER_HYPERPARAMETERS_JSON"), "DIMER_HYPERPARAMETERS_JSON"),

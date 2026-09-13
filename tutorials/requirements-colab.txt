@@ -1,8 +1,10 @@
-# DIMER tutorial runtime pins for TabDPT Regressor.
-# Supported tutorial lock set: Python >=3.11. NumPy 2.3.0 follows the upstream v1.2.0 reproduction environment's Python >=3.11 pin.
-# TabDPT core versions otherwise follow the upstream v1.2.0 reproduction environment where available.
+# Runtime pins for the TabDPT Regressor tutorials: a mirror of pyproject.toml [project].dependencies.
+# The standalone notebooks carry pyproject's list inline as PINS (NOTEBOOK_SPEC 1.1 ENV2/PAR2); pyproject is
+# canonical and this file must be kept equal to it. Requires Python >=3.11 (numpy 2.3.0).
+tabdpt==1.2.0
+torch==2.7.1
 faiss-cpu==1.11.0
-huggingface-hub==0.33.2
+huggingface-hub==0.36.2
 numpy==2.3.0
 omegaconf==2.3.0
 pandas==2.3.2
@@ -10,6 +12,4 @@ pyarrow==25.0.0
 safetensors==0.5.3
 scikit-learn==1.7.0
 scipy==1.15.3
-tabdpt==1.2.0
-torch==2.7.1
 tqdm==4.67.1

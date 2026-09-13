@@ -10,14 +10,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        # requires-python is >=3.11 (the pinned numpy==2.3.0 lock set); torch==2.7.1 ships wheels up to 3.13.
+        python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
-      - run: pip install -e '.[test]'
+      # The offline suite, the validator and the generator need only the light pins; the package is
+      # installed without re-resolving so the 254 MB checkpoint and torch/tabdpt are never pulled in CI.
+      - run: pip install numpy==2.3.0 pandas==2.3.2 scikit-learn==1.7.0 huggingface-hub==0.36.2 pyarrow==25.0.0 'pytest>=8,<9'
+      - run: pip install -e . --no-deps
       - run: pytest -q
       - run: python scripts/validate_repo.py
       - run: python scripts/validate_colab_tutorial.py
+      - name: Validate tutorial and model-card source (NOTEBOOK_SPEC 1.1 standalone carrier)
+        run: python tools/validate_release_assets.py
+      - name: Standalone notebook parity (NOTEBOOK_SPEC 1.1 PAR3)
+        run: |
+          python tools/build_notebook.py --check
+          python tools/build_notebook.py --check --template tools/notebook_template_artifact_inference.py
