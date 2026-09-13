@@ -8,10 +8,10 @@ import pandas as pd
 import pytest
 
 from tabdpt_regressor_pipeline.dimer_runtime import (
-    DimerRuntimeConfig,
     SUPPORTED_HYPERPARAMETER_KEYS,
     SUPPORTED_PREPROCESSING_KEYS,
     TRANSPORT_HYPERPARAMETER_KEYS,
+    DimerRuntimeConfig,
     load_dimer_tables,
     prepare_dimer_frames,
 )
@@ -28,7 +28,7 @@ def test_manifest_controls_match_runtime_contract():
     assert set(manifest["datasetPreprocessing"]) == set(SUPPORTED_PREPROCESSING_KEYS)
     assert set(manifest["modelFinetuning"]) == set(SUPPORTED_HYPERPARAMETER_KEYS)
     assert "modelInference" not in manifest
-    assert TRANSPORT_HYPERPARAMETER_KEYS == {"model_id"}
+    assert {"model_id"} == TRANSPORT_HYPERPARAMETER_KEYS
     assert "model_id" not in manifest["modelFinetuning"]
 
 
