@@ -122,7 +122,7 @@ for the stated runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| | | | Standalone E2E default sample path | | pending — queued to the GPU lane |
+| 2026-09-14 | `46c5e17` / `0611e07348b4` | Kaggle T4 (`kurtvalcorza/dimer-nb2-tabdpt-regressor` v1) | Default sample path | 231.7 s | **PASSED** — 11/11 ok code cells executed cleanly, 4 files, 254 MB staged |
 | | | | Standalone ARTIFACT-INFERENCE with an external artifact | | pending — queued to the GPU lane |
 
 ## Current status

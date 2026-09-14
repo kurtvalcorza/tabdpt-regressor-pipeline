@@ -23,7 +23,7 @@ def _source(nb: dict, *, outside_modules: bool = False) -> str:
 def _assert_standalone_metadata(nb: dict, profile: str) -> None:
     dimer = nb["metadata"]["dimer"]
     assert dimer["notebook_profile"] == profile
-    assert dimer["notebook_spec"] == "1.1"
+    assert dimer["notebook_spec"] == "2.0"
     assert dimer["standalone"] is True
     assert dimer["generated_from"]["repository"] == "tabdpt-regressor-pipeline"
 

@@ -23,6 +23,13 @@ TEMPLATE = {
     "stem": "tabdpt_regressor_artifact_inference",
     "notebook_name": "tabdpt_regressor_artifact_inference_colab.ipynb",
     "profile": "ARTIFACT-INFERENCE",
+    "mode": "GUIDED",
+    "run_all": (
+        "**Known NOTEBOOK_SPEC 2.0 gap (§19, SART1/RUN5/RUN2):** the default path does not yet obtain a trusted sample artifact or sample rows automatically — with `ARTIFACT_DIR` and `NEW_DATA_PATH` empty, Sections 4 and 6 open upload dialogs for a serving artifact produced by the E2E tutorial and for unlabelled rows; an executor sets both to paths already in the runtime to skip the dialogs. Until a published sample artifact and sample rows are wired in, this notebook is a `Candidate`, not release-grade. Once they are present, **Run all** installs the pinned dependencies, validates the artifact bundle before any state is reconstructed, reconstructs the serving state with the fitted preprocessing restored (nothing is refit from inference data), validates the new rows into an input manifest, emits point predictions (no per-prediction uncertainty), reports what cannot be measured, and exports outputs — all inside this kernel, with no DIMER worker or service and no credential."
+    ),
+    "byod": (
+        "New-input BYOD is the `NEW_DATA_PATH`/upload branch in Section 6: your own unlabelled CSV or Parquet with exactly the artifact's fitted feature columns passes through the same validation, prediction and export cells. A user-supplied artifact is the separate `ARTIFACT_DIR`/upload branch in Section 4, validated before any state is reconstructed. Uploads stay inside this runtime; do not upload confidential or restricted data unless you are authorised to process it here."
+    ),
     "title": "TabDPT Regressor — DIMER artifact inference tutorial (standalone)",
     "badges": [
         badge
