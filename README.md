@@ -79,3 +79,7 @@ TabDPT was pretrained on real-world tabular datasets. Public tutorial/benchmark 
 - Ma et al., *TabDPT: Scaling Tabular Foundation Models*, arXiv:2410.18164 / NeurIPS 2025. This is the base TabDPT work.
 
 This repository is an integration project and is not affiliated with or endorsed by Layer 6 AI or The Toronto-Dominion Bank.
+
+## AI Assistance Disclosure
+
+This tutorial and its accompanying documentation were developed with generative AI assistance for code development and technical writing under maintainer direction. The maintainer remains responsible for reviewing the implementation, validating results, and making release decisions. AI assistance does not constitute independent verification, provider endorsement, or release approval.

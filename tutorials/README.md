@@ -60,3 +60,7 @@ Digest and manifest checks establish internal consistency with this repository's
 CI covers notebook JSON/source structure, Python-cell compilation, profile metadata, the standalone carrier and parity checks (`tools/validate_release_assets.py`, `tools/build_notebook.py --check`, `tests/test_notebook_parity.py`), preprocessing/capacity workflow assertions, artifact-contract/no-refit regression tests, and ordinary repository tests. These checks are not evidence that the current Colab model host/runtime/GPU path executes successfully.
 
 The release gate, the executor procedure for both notebooks and the durable execution record live in [`../docs/release-verification.md`](../docs/release-verification.md) (the execution-only gate was tracked in issue #15). Until clean-runtime execution evidence is recorded there for the exact candidate commit of the standalone notebooks, the correct status is **Candidate**, not release-grade.
+
+## AI Assistance Disclosure
+
+This tutorial and its accompanying documentation were developed with generative AI assistance for code development and technical writing under maintainer direction. The maintainer remains responsible for reviewing the implementation, validating results, and making release decisions. AI assistance does not constitute independent verification, provider endorsement, or release approval.
