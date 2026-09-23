@@ -67,7 +67,7 @@ Supervised tabular regression tasks, predicting continuous numerical values from
 
 ###### Primary Intended Users
 
-Machine learning engineers, data scientists, quantitative researchers, and software engineers developing predictive regression pipelines for structured datasets in enterprise, scientific, or academic environments. The envisioned deployment setting is internal enterprise or research use through the DIMER platform, not a public-facing service. Users are expected to understand data validation, leakage prevention, distribution shift, and standard regression evaluation methodology, and to recognise that the point prediction is a mean-style estimate with no attached interval; a user who cannot tell a held-out evaluation from an in-context evaluation should not be setting operational cutoffs on this pipeline's output.
+Machine learning engineers, data scientists, quantitative researchers, and software engineers developing predictive regression pipelines for structured datasets in enterprise, scientific, or academic environments. The envisioned deployment setting is research or in-house enterprise use on infrastructure the user controls, not a public-facing service. Users are expected to understand data validation, leakage prevention, distribution shift, and standard regression evaluation methodology, and to recognise that the point prediction is a mean-style estimate with no attached interval; a user who cannot tell a held-out evaluation from an in-context evaluation should not be setting operational cutoffs on this pipeline's output.
 
 ###### Out-of-scope use cases
 
