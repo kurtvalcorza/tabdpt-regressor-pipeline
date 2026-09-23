@@ -38,7 +38,7 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
 
 - **Serving Artifact Inference Tutorial**:  
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb) [`tabdpt_classifier_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb)  
-  *Load exported DIMER bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
+  *Load the exported bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
 
 ### TabDPT Regressor (`tabdpt-regressor-pipeline`)
 
@@ -48,7 +48,7 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
 
 - **Serving Artifact Inference Tutorial**:  
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb) [`tabdpt_regressor_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb)  
-  *Load exported DIMER bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
+  *Load the exported bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
 
 > [!NOTE]
 > All tutorial notebooks are configured with `use_flash=False` to ensure portable out-of-the-box execution across Google Colab Tesla T4 accelerators (`sm_75`) as well as modern Ampere/Hopper GPUs (`sm_80+`).
@@ -57,7 +57,7 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
 
 #### Description
 
-TabDPT v1.2, released as **TabDPT-Turbo**, is an open-weight tabular foundation model designed for in-context supervised regression on structured datasets. Rather than iteratively training neural network weights or tree ensembles on each new dataset via gradient descent or heuristic splits, TabDPT processes a labelled support table (the in-context prompt) containing continuous targets alongside unlabelled test observations through a specialized tabular Transformer architecture. Task adaptation occurs entirely at inference time through in-context forward evaluation without gradient updates or per-dataset training loops. For single-context queries without ensembling, inference requires only a forward evaluation; when ensembling over multiple support subsets (`n_ensembles > 1`) or batching query chunks, predictions are aggregated across multiple forward passes. Pretrained on a diverse corpus of real-world tabular datasets and optimized with FlashAttention and key-value caching in v1.2 (Turbo), it delivers rapid, zero-shot tabular regression without per-dataset hyperparameter tuning. This repository packages the upstream regression estimator for reproducible, DIMER-ready deployment.
+TabDPT v1.2, released as **TabDPT-Turbo**, is an open-weight tabular foundation model designed for in-context supervised regression on structured datasets. Rather than iteratively training neural network weights or tree ensembles on each new dataset via gradient descent or heuristic splits, TabDPT processes a labelled support table (the in-context prompt) containing continuous targets alongside unlabelled test observations through a specialized tabular Transformer architecture. Task adaptation occurs entirely at inference time through in-context forward evaluation without gradient updates or per-dataset training loops. For single-context queries without ensembling, inference requires only a forward evaluation; when ensembling over multiple support subsets (`n_ensembles > 1`) or batching query chunks, predictions are aggregated across multiple forward passes. Pretrained on a diverse corpus of real-world tabular datasets and optimized with FlashAttention and key-value caching in v1.2 (Turbo), it delivers rapid, zero-shot tabular regression without per-dataset hyperparameter tuning. This repository packages the upstream regression estimator for reproducible deployment.
 
 #### Intended Use and Limitations
 
@@ -149,7 +149,7 @@ Distinct from the capability and decision boundaries listed under *Out-of-scope 
 - Predictive algorithms designed for exploitative price discrimination or predatory lending.
 - Automated resource-allocation systems that penalise protected or vulnerable groups, including any regression on a target that proxies a protected attribute.
 - Generating deceptive analytical forecasts for fraudulent or manipulative purposes, or presenting the point prediction as a certified measurement.
-- Any use that violates the Apache-2.0 terms of the upstream Layer6/TabDPT weights or the terms of the DIMER deployment.
+- Any use that violates the Apache-2.0 terms of the upstream Layer6/TabDPT weights or the terms of the deployment that runs the pipeline.
 
 ---
 
@@ -200,11 +200,11 @@ The Turbo paper explicitly describes the released model as TabDPT v1.2. The earl
 - `predict(...)`: one floating-point prediction per row;
 - `evaluate(...)`: MAE, RMSE, and R².
 
-## DIMER runtime status
+## Runtime status
 
-The repository includes an executable local/on-prem DIMER adapter. `datasetPreprocessing` is consumed from `DIMER_PREPROCESSING_ARGS_JSON`; the platform's existing `modelFinetuning` transport is consumed from `DIMER_HYPERPARAMETERS_JSON`, but `fine_tune=true` is explicitly rejected because v1.2 uses ICL rather than gradient fine-tuning.
+The repository includes an executable local/on-prem adapter. `datasetPreprocessing` is consumed from `DIMER_PREPROCESSING_ARGS_JSON`; the `modelFinetuning` settings are consumed from `DIMER_HYPERPARAMETERS_JSON`, but `fine_tune=true` is explicitly rejected because v1.2 uses ICL rather than gradient fine-tuning.
 
-The adapter supports `train.csv` and optional `val.csv`, applies deterministic splitting/support capping, executes the model, and writes result/provenance/context artifacts. Routine CI tests this contract without downloading the model weight. A real checkpoint/GPU smoke test and on-platform deployment/reload test remain production-acceptance work.
+The adapter supports `train.csv` and optional `val.csv`, applies deterministic splitting/support capping, executes the model, and writes result/provenance/context artifacts. Routine CI tests this contract without downloading the model weight. No real-checkpoint or GPU smoke test and no deployment/reload test has been run.
 
 ## Training-data / benchmark caveat
 
