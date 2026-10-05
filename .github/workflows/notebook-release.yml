@@ -90,11 +90,39 @@ jobs:
                   raise FileNotFoundError(f"Missing staged CI upload(s): {missing}")
               return {p.name: p.read_bytes() for p in paths}
           PY
+          # The notebooks now install nothing into the runner's Python (they build their own isolated environment),
+          # so this step installs what its own inline scripts import, at the repository's pins.
+          python -m pip install numpy==2.3.0 pandas==2.3.2 scikit-learn==1.7.0
           python - <<'PY'
           from sklearn.datasets import load_diabetes
           frame = load_diabetes(as_frame=True).frame.drop(columns=["target"]).head(8).copy()
           frame.iloc[:, 0] = frame.iloc[:, 0] + 1e-7
           frame.to_csv("/content/tabdpt-regressor-independent-inference.csv", index=False)
+          PY
+          # The companion's default path scores its pinned sample artifact; point it at the external producer artifact
+          # instead: tick the two upload fields (served by the shim queue) and pin the producer's trusted digest.
+          python - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          digest = hashlib.sha256(Path("/content/tabdpt-integration-artifact/artifact.json").read_bytes()).hexdigest()
+          source = Path("tutorials/tabdpt_regressor_artifact_inference_colab.ipynb")
+          notebook = json.loads(source.read_text(encoding="utf-8"))
+          fields = {"UPLOAD_ARTIFACT": "True", "EXPECTED_ARTIFACT_SHA256": repr(digest), "UPLOAD_NEW_DATA": "True"}
+          seen = set()
+          for cell in notebook["cells"]:
+              if cell["cell_type"] != "code":
+                  continue
+              text = "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
+              for name, value in fields.items():
+                  text, n = re.subn(rf"^{name} = .*?(  # @param.*)$", rf"{name} = {value}\1", text, flags=re.M)
+                  if n:
+                      seen.add(name)
+              cell["source"] = text
+          assert seen == set(fields), f"form fields not found: {set(fields) - seen}"
+          target = Path("/content/companion/tabdpt_regressor_artifact_inference_colab.ipynb")
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps(notebook, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+          print({"trusted_digest": digest, "parametrised": sorted(seen)})
           PY
           {
             echo 'PYTHONPATH=/tmp/colab-shim'
@@ -106,7 +134,7 @@ jobs:
         run: |
           jupyter nbconvert \
             --to notebook \
-            --execute tutorials/tabdpt_regressor_artifact_inference_colab.ipynb \
+            --execute /content/companion/tabdpt_regressor_artifact_inference_colab.ipynb \
             --output executed-tabdpt-regressor-artifact-inference.ipynb \
             --output-dir /content \
             --ExecutePreprocessor.timeout=1800 \
