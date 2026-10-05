@@ -1,0 +1,98 @@
+{
+  "artifactSemantics": "support-context-plus-pinned-base-model",
+  "baseModel": {
+    "filename": "tabdpt1_2.safetensors",
+    "repo": "Layer6/TabDPT",
+    "revision": "4462ffbd1d8dea25d4862d30beed4b70cd596ae5",
+    "sha256": "06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd",
+    "upstreamCodeCommit": "9cfb05e0a6bc380ae6c99c08adc8d50dacd4f246"
+  },
+  "dropColumns": [],
+  "format": "tabdpt-dimer-context-v3",
+  "formatVersion": 3,
+  "preprocessing": {
+    "dropColumns": [],
+    "encoder": {
+      "categoricalEncoding": {
+        "missingCode": "len(categoryMap)+1",
+        "unknownCode": "len(categoryMap)",
+        "valueNormalization": "str"
+      },
+      "categoryMaps": {},
+      "featureColumns": [
+        "age",
+        "sex",
+        "bmi",
+        "bp",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6"
+      ],
+      "numericColumns": [
+        "age",
+        "sex",
+        "bmi",
+        "bp",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6"
+      ],
+      "schemaVersion": 1
+    },
+    "schemaVersion": 1,
+    "seed": 42,
+    "targetColumn": "target",
+    "upstream": {
+      "imputer_statistics": [
+        0.0014418076072781564,
+        0.000183891456098918,
+        0.0017356583405780674,
+        0.0011793881813458762,
+        -0.0005555101229526302,
+        -0.0008060091702002828,
+        -0.000989003923074354,
+        0.00037655339239983746,
+        0.0012160592233007189,
+        0.0018910080220641107
+      ],
+      "scaler_mean": [
+        0.0014418076072781564,
+        0.000183891456098918,
+        0.0017356583405780674,
+        0.0011793881813458762,
+        -0.0005555101229526302,
+        -0.0008060091702002828,
+        -0.000989003923074354,
+        0.00037655339239983746,
+        0.0012160592233007189,
+        0.0018910080220641107
+      ],
+      "scaler_scale": [
+        0.04626838866895763,
+        0.04757646527577283,
+        0.04720826659161809,
+        0.04840001616554496,
+        0.04771807610898049,
+        0.047563690033428446,
+        0.04697698252284713,
+        0.0477222288293891,
+        0.04776045872066888,
+        0.048311729799649844
+      ],
+      "seed": 42
+    }
+  },
+  "targetColumn": "target",
+  "taskType": "tabular_regression",
+  "trainingContext": {
+    "path": "training_context.parquet",
+    "sha256": "186ce81debfc9893fb098fd59505fc4350b0f2c471bdcf0397f11dade0104b28",
+    "size": 18770
+  }
+}
