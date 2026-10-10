@@ -116,22 +116,47 @@ for the stated runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| 2026-09-14 | `46c5e17` / `0611e07348b4` | Kaggle T4 (`kurtvalcorza/dimer-nb2-tabdpt-regressor` v1) | Default sample path | 231.7 s | **PASSED** — 11/11 ok code cells executed cleanly, 4 files, 254 MB staged |
-| | | | Standalone ARTIFACT-INFERENCE with an external artifact | | pending — queued to the GPU lane |
+| 2026-09-14 | `46c5e17` / `0611e07348b4` | Kaggle T4 (`kurtvalcorza/dimer-nb2-tabdpt-regressor` v1) | Default sample path | 231.7 s | **PASSED** — 11/11 ok code cells executed cleanly, 4 files, 254 MB staged (previous E2E blob, superseded; outcome only — no metrics, package versions or `restarted` flag were recorded) |
+| | `7c878eb19872` (E2E) | Colab T4 | E2E default path of the current blob | | pending — queued to the GPU lane |
+| | `ec42aa44be9f` (companion) | Colab T4 | ARTIFACT-INFERENCE default path (pinned sample artifact) of the current blob | | pending — queued to the GPU lane |
+
+### CI integration execution (not clean-runtime evidence)
+
+The pull request's `Notebook integration execution` job (`.github/workflows/notebook-release.yml`) ran both notebooks top to
+bottom with nbconvert on a GitHub-hosted `ubuntu-24.04` CPU runner, each stage in the environment the notebook itself built
+from `tutorials/requirements-colab.lock.txt` (CPython 3.12.12, `torch` 2.7.1+cu126, `tabdpt` 1.2.0), with the real checkpoint
+downloaded from the Hub at the pinned revision. The companion was parametrised to take the E2E run's artifact by the CI
+upload shim with its trusted digest, so its default (pinned-sample) path was not exercised there. It is not a Colab run and
+does not count toward promotion.
+
+| Date (UTC) | Commit / notebook blob | Path exercised | Outcome |
+|---|---|---|---|
+| 2026-10-05 | `a67ffd2` / `7c878eb19872` (E2E) | Default sample path, CPU | 11/11 code cells, no error. TabDPT holdout MAE 40.98 / RMSE 51.68 / R² 0.496; standardised linear regression 42.79 / 53.85 / 0.453 (R² 0.332–0.585 over 20 seeded splits); training mean 64.01 / 73.22 / −0.012. Exported `artifact.json` SHA-256 `0f75e258…c783` and `training_context.parquet` `186ce81d…4b28`, byte-identical to `examples/sample-artifact/` (`matches_pinned_sample_artifact: True`) |
+| 2026-10-05 | `a67ffd2` / `ec42aa44be9f` (companion) | The E2E run's artifact by upload with its trusted digest, eight independent rows by upload, CPU | 9/9 code cells, no error |
+
+### Local lock-only drives (not clean-runtime evidence)
+
+These ran the notebooks' own code cells in order (nbclient, a separate ipykernel venv) in a Linux x86_64 WSL2 container,
+CPU only (`CUDA_VISIBLE_DEVICES=-1`), with every stage in the environment the notebook itself built from
+`tutorials/requirements-colab.lock.txt` (55 packages, `torch` 2.7.1+cu126, `tabdpt` 1.2.0). One local deviation: the pinned
+checkpoint was pre-seeded into `weights/tabdpt-1.2/` after a SHA-256 check (this container's IPv6 route to the Hub stalls);
+the stage then reported `fetched: []` and re-verified it. They are not hosted runs and do not count toward promotion.
+
+| Date (UTC) | Commit / notebook blob | Path exercised | Wall | Outcome |
+|---|---|---|---|---|
+| 2026-10-11 | `a67ffd2` / `ec42aa44be9f` (companion) | Defaults: pinned sample artifact and rows, no upload | 453 s (incl. 391 s environment build) | 9/9 code cells, no error. `trusted_digest: verified` (`0f75e258…c783`), `sample_kind: sample`, report `not-measurable`; the eight predictions equal the CI E2E run's (max abs difference 4.6e-5; row 287: 152.0143) |
+| 2026-10-11 | `a67ffd2` / `7c878eb19872` (E2E) | Default sample path | 36 s (environment reused) | 11/11 code cells, no error. TabDPT holdout MAE 40.9804 / RMSE 51.6813 / R² 0.4959 (equal to the CI run); `matches_pinned_sample_artifact: True` |
 
 ## Current status
 
-No clean-runtime execution of the standalone notebooks has been recorded yet; both runs are **pending**
-and queued to the GPU lane. Static validation (`tools/validate_release_assets.py`), nbformat validation, a
+No clean-runtime execution of the current standalone notebook blobs has been recorded yet (the 2026-09-14 Kaggle row is
+the previous E2E blob); both Colab T4 runs are **pending** and queued to the GPU lane. The CI integration execution above
+is the first real execution of the standalone path, the checkpoint download and the helper stages, on CPU only. Static validation (`tools/validate_release_assets.py`), nbformat validation, a
 `compile()` sweep over every code cell, and the offline unit suite passed on the tutorial source at
 the candidate revision, which is necessary but not sufficient. The registry status remains
 **Candidate** until a reviewer confirms a recorded run against the notebook blobs under review and
-an integrator promotes it; promotion is not performed by the builder. Facts a reviewer should weigh:
-`stage_missing_files` was exercised only with an injected downloader in the unit suite (the real
-`hf_hub_download` fetch of `tabdpt1_2.safetensors` into a fresh `weights/tabdpt-1.2/` has not been executed);
-`from_pretrained` loads no model, so the first real load of the checkpoint through the snapshot path happens inside
-`fit`; no execution of the previous notebook pair was ever recorded either (issue #15); and the standalone
-carrier itself — executing the three carried module cells in a runtime that has no repository checkout — has been
-validated statically only (parity PASS, carrier probe with the package import blocked), never run. The clean runs
-will be the first execution of the standalone path, of the staging path, and of the helper stages
-(`validate_inputs`, `training_mean_baseline`, `evaluation_report`) against the real weights.
+an integrator promotes it; promotion is not performed by the builder. Facts a reviewer should weigh: the real `hf_hub_download` fetch of `tabdpt1_2.safetensors`, the standalone carrier, the
+helper stages (`validate_inputs`, `training_mean_baseline`, `evaluation_report`) and the first real load of the checkpoint
+inside `fit` have run only in the CPU CI integration execution above, never on a GPU or in Colab; no execution of the previous
+notebook pair was ever recorded (issue #15); and the companion's default pinned-sample path has run only in the local lock-only drive above, so the Colab T4 run
+will be its first hosted execution.

@@ -469,3 +469,32 @@ def test_m3_id_columns_are_kept_out_of_features_and_reported(tmp_path) -> None:
     run.options["id_columns"] = ["bmi"]
     with pytest.raises(ValueError, match="are fitted feature columns"):
         _quiet(AI_STAGES.stage_rows, run)
+
+
+# ---------------------------------------------------------------- ENV15: no worker, no google.colab stub, no IPython in stages
+
+
+@pytest.mark.parametrize("template", ["notebook_template.py", "notebook_template_artifact_inference.py"])
+def test_stage_processes_import_neither_ipython_nor_google_colab(template: str) -> None:
+    """Stages run in the isolated environment, which has neither IPython nor google.colab: only kernel cells may use them
+    (the upload dialogs). There is no worker and no google.colab stub that would need a ModuleSpec (ENV15). No carried
+    Python file imports IPython or google at all, so a stage cannot fail on Colab for that reason
+    (tabpfn-regressor-pipeline e2d5fab / tabicl-regressor-pipeline fe7596f pattern)."""
+    build = _load(f"tdr_build_notebook_{template[:-3]}", TOOLS / "build_notebook.py")
+    tpl = _load(f"tdr_{template[:-3]}", TOOLS / template).TEMPLATE
+    carried = [ROOT / source for dest, source in build.carried_sources(ROOT, tpl).items() if dest.endswith(".py")]
+    runner = ROOT / tpl["stage_runner"]
+    assert runner in carried and any(p.name == "pipeline.py" for p in carried)
+    for p in carried:
+        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [a.name for a in node.names] + ([node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
+                assert not any(n.split(".")[0] in ("IPython", "google") for n in names), (p.name, node.lineno)
+    text = (ROOT / "tutorials" / tpl["notebook_name"]).read_text(encoding="utf-8")
+    assert "sys.modules['google" not in text and 'sys.modules[\\"google' not in text and "_WORKER_SOURCE" not in text
+    assert "IPython" not in text
+    # google.colab appears only in the kernel's own upload branches, imported inside them (TDR-m1 / TDRA-m1).
+    for cell in _code_cells(ROOT / "tutorials" / tpl["notebook_name"]):
+        if "google.colab" in cell:
+            assert re.search(r"^\s+from google\.colab import files$", cell, re.M), cell[:200]
+            assert not re.search(r"^(from|import) google", cell, re.M), cell[:200]
