@@ -4,9 +4,10 @@
 This validator deliberately does not claim runtime execution evidence. It checks notebook JSON,
 profile declarations, Python-cell syntax, portable TabDPT entrypoints, source hygiene, and a small
 set of profile-specific structural invariants that are falsifiable without downloading the model.
-The standalone-carrier and parity checks (NOTEBOOK_SPEC 2.0 §4) live in tools/validate_release_assets.py;
-the notebooks carry the package's modules verbatim in cells tagged ``metadata.dimer.embedded_module``, which
-this script skips for the checks that apply to the notebook's own cells.
+The standalone-carrier and parity checks (NOTEBOOK_SPEC 2.2 §4) live in tools/validate_release_assets.py.
+The notebooks carry the package and a stage runner as text in one carrier cell (``metadata.dimer.embedded_sources``);
+this script parses the carried stage runner for the entrypoint checks and skips the carrier cell for the checks that
+apply to the notebook's own cells.
 """
 from __future__ import annotations
 
@@ -91,7 +92,20 @@ def check_absolute_paths(code: str, filename: str, cell_idx: int) -> None:
 
 
 def _is_embedded(cell: dict) -> bool:
-    return bool(cell.get("metadata", {}).get("dimer", {}).get("embedded_module"))
+    return bool(cell.get("metadata", {}).get("dimer", {}).get("embedded_sources"))
+
+
+def carried_runner(nb: dict) -> str:
+    """The stage runner text the carrier cell writes as ``tutorial_stages.py`` ('' if there is none)."""
+    for cell in nb.get("cells", []):
+        if not _is_embedded(cell):
+            continue
+        src = cell.get("source", "")
+        tree = ast.parse("".join(src) if isinstance(src, list) else str(src))
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "CARRIED_FILES":
+                return ast.literal_eval(node.value).get("tutorial_stages.py", "")
+    return ""
 
 
 def _source_text(nb: dict, *, outside_modules: bool = False) -> str:
@@ -115,8 +129,8 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     profile = dimer.get("notebook_profile")
     if profile not in ALLOWED_PROFILES:
         raise AssertionError(f"{nb_path.name}: missing/invalid metadata.dimer.notebook_profile")
-    if dimer.get("notebook_spec") != "2.0":
-        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '2.0'")
+    if dimer.get("notebook_spec") != "2.2":
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '2.2'")
     if dimer.get("standalone") is not True:
         raise AssertionError(f"{nb_path.name}: metadata.dimer.standalone must be true (spec 2.0 §4)")
     expected = EXPECTED_PROFILES.get(nb_path.name)
@@ -127,7 +141,7 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
         raise AssertionError(f"{nb_path.name}: unresolved TODO/TBD/FIXME placeholder found")
 
     common = {
-        "supported Python floor": "Python 3.11+",
+        "isolated runtime": "Nothing is installed into the notebook kernel",
         "standalone carrier statement": "**This notebook is standalone.**",
         "point-prediction semantics": "point estimate",
     }
@@ -136,6 +150,10 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     if profile == "E2E":
         required = {
             "BYOD path": "USE_BYOD",
+            "classical reference": "standardised_linear_regression",
+            "BYOD path field": "BYOD_PATH",
+            "blank-target refusal": "missing or blank value(s)",
+            "minimum rows": "rows is below the minimum of",
             "meaningful regression baseline": "training-mean baseline",
             "new-data inference": ".predict(",
             "machine-readable predictions": "to_csv(",
@@ -161,6 +179,8 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     if profile == "ARTIFACT-INFERENCE":
         required = {
             "external upload": "files.upload(",
+            "trusted digest": "EXPECTED_ARTIFACT_SHA256",
+            "pinned sample artifact": "sample-artifact/SAMPLE_ARTIFACT.json",
             "pre-load artifact validation": "validate_artifact_bundle(",
             "verified serving reconstruction": "load_verified_artifact(",
             "no-refit reload assertion": "preprocessing_restored_",
@@ -182,7 +202,7 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
             "artifact creation": "export_artifact_bundle(",
             "in-notebook support fitting": ".fit(",
         }
-        own_cells = _source_text(nb, outside_modules=True)  # the carried package defines these names
+        own_cells = _source_text(nb, outside_modules=True) + "\n" + carried_runner(nb)  # the carried package defines these names
         for label, marker in forbidden.items():
             if marker in own_cells:
                 raise AssertionError(
@@ -227,7 +247,12 @@ def validate_notebook(nb_path: Path) -> None:
         if check_pipeline_use_flash(tree, nb_path.name, idx):
             runtime_entrypoint_found = True
 
-    source_text = _source_text(nb)
+    runner = carried_runner(nb)
+    if runner:
+        check_absolute_paths(runner, nb_path.name, "carried tutorial_stages.py")
+        if check_pipeline_use_flash(ast.parse(runner), nb_path.name, "carried tutorial_stages.py"):
+            runtime_entrypoint_found = True
+    source_text = _source_text(nb) + "\n" + runner
     _validate_profile_contract(nb_path, nb, source_text)
 
     if not runtime_entrypoint_found:

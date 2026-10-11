@@ -10,10 +10,10 @@ def _load(name: str):
 
 
 def _source(nb: dict, *, outside_modules: bool = False) -> str:
-    """Notebook source; outside_modules=True skips the carried package cells (tagged embedded_module)."""
+    """Notebook source; outside_modules=True skips the carried package cells (the carrier cell, tagged embedded_sources)."""
     chunks = []
     for cell in nb["cells"]:
-        if outside_modules and cell.get("metadata", {}).get("dimer", {}).get("embedded_module"):
+        if outside_modules and cell.get("metadata", {}).get("dimer", {}).get("embedded_sources"):
             continue
         src = cell.get("source", "")
         chunks.append("".join(src) if isinstance(src, list) else str(src))
@@ -23,7 +23,7 @@ def _source(nb: dict, *, outside_modules: bool = False) -> str:
 def _assert_standalone_metadata(nb: dict, profile: str) -> None:
     dimer = nb["metadata"]["dimer"]
     assert dimer["notebook_profile"] == profile
-    assert dimer["notebook_spec"] == "2.0"
+    assert dimer["notebook_spec"] == "2.2"
     assert dimer["standalone"] is True
     assert dimer["generated_from"]["repository"] == "tabdpt-regressor-pipeline"
 
@@ -41,6 +41,8 @@ def test_e2e_notebook_declares_and_exercises_release_profile():
     assert "export_artifact_bundle(" in source
     assert "load_verified_artifact(" in source
     assert "np.testing.assert_allclose(" in source
+    assert "standardised_linear_regression" in source
+    assert "Restart the runtime" not in source
     assert "does **not** establish" in source
     assert "smoke tutorial" not in source.lower()
 
@@ -56,6 +58,7 @@ def test_artifact_inference_is_external_and_never_self_produces():
     assert "validate_artifact_bundle(" in source
     assert "load_verified_artifact(" in source
     assert "files.upload(" in source
+    assert "EXPECTED_ARTIFACT_SHA256" in source
     assert "serving.predict(" in source  # the object reconstructed from the external artifact
     assert "to_csv(" in source
     assert "provenance" in source

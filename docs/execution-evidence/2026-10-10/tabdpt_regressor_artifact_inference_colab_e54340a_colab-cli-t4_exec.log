@@ -1,0 +1,102 @@
+[colab] Parsing notebook '/home/kurt/colab-runs/tabdpt-regressor-pipeline-e54340a-bfb3a3/tabdpt_regressor_artifact_inference_colab_e54340a_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/9 - Infrastructure: check the runtime, accelerator and disk; create (or keep) the run directory...
+{'accelerator': 'Tesla T4, 15360 MiB', 'kernel_python': '3.13.15', 'run_directory': '/content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c', 'outputs': '/content/outputs', 'weights': '/content/weights', 'environment_root': '/tmp/dimer_uv', 'free_gib': {'weights': 193.3, 'environment': 193.3}}
+[colab] Executing cell 2/9 - Infrastructure: write and verify the carried package, stage runner, lock, manifest and samples...
+{'carried_files': 13, 'verified': True, 'repository': 'kurtvalcorza/tabdpt-regressor-pipeline', 'revision': 'df095f8b60d4663738dba07abf34e24b069a60e1', 'generator': 'build_notebook.py/3.0-tabular'}
+[colab] Executing cell 3/9 - Infrastructure: build (or reuse) the isolated locked environment and define the stage runner...
+{'notebook_source': 'df095f8b60d4663738dba07abf34e24b069a60e1', 'python': '3.12.12', 'torch': '2.7.1', 'tabdpt': '1.2.0', 'numpy': '2.3.0', 'pandas': '2.3.2', 'scikit-learn': '1.7.0', 'cuda': True, 'locked_packages': 55, 'environment': '/tmp/dimer_uv/venv-9d2b35cfd6eb1c8c', 'environment_reused': False, 'setup_seconds': 67}
+[colab] Executing cell 4/9 - Infrastructure: stage and digest-verify the pinned checkpoint...
+Running stage 'weights' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c/logs/weights.log
+{'model_id': 'Layer6/TabDPT', 'revision': '4462ffbd1d8dea25d4862d30beed4b70cd596ae5', 'license': 'apache-2.0', 'files': 1, 'total_bytes': 254098072}
+{'weights_dir': '/content/weights/tabdpt-1.2', 'fetched': ['tabdpt1_2.safetensors']}
+{'verified_files': 1, 'revision': '4462ffbd1d8dea25d4862d30beed4b70cd596ae5', 'sha256': ['06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd']}
+[colab] Executing cell 5/9 - tabdpt_regressor_artifact_inference-14...
+Running stage 'artifact' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c/logs/artifact.log
+{'source': 'sample', 'trusted_digest': 'verified', 'artifact_sha256': '0f75e2582eb283e969d1ec8914034ca0254c7b34674744b98a729219987ac783', 'format': 'tabdpt-dimer-context-v3', 'formatVersion': 3, 'artifactSemantics': 'support-context-plus-pinned-base-model'}
+{
+  "filename": "tabdpt1_2.safetensors",
+  "repo": "Layer6/TabDPT",
+  "revision": "4462ffbd1d8dea25d4862d30beed4b70cd596ae5",
+  "sha256": "06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd",
+  "upstreamCodeCommit": "9cfb05e0a6bc380ae6c99c08adc8d50dacd4f246"
+}
+{'targetColumn': 'target', 'featureCount': 10, 'categoricalColumns': [], 'contextRows': 353, 'contextTargetSummary': {'mean': 153.737, 'std': 78.062, 'min': 25.0, 'max': 346.0}, 'contextBytes': 18770, 'contextSha256': '186ce81debfc9893fb098fd59505fc4350b0f2c471bdcf0397f11dade0104b28'}
+[colab] Executing cell 6/9 - tabdpt_regressor_artifact_inference-17...
+Running stage 'reconstruct' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c/logs/reconstruct.log
+{'target': 'target', 'encodedFeatureCount': 10, 'modelFeatureCeiling': 128, 'featureReduction': 'pca', 'featureReductionActive': False, 'preprocessingRestoredWithoutRefit': True, 'baseWeight': '/content/weights/tabdpt-1.2/tabdpt1_2.safetensors'}
+[colab] Executing cell 7/9 - tabdpt_regressor_artifact_inference-20...
+Running stage 'rows' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c/logs/rows.log
+{'ceilings': {'MIN_DISTINCT_TARGETS': 2, 'featureColumns': 10}}
+{
+  "schema": {
+    "input": "pandas.DataFrame, one row per example; feature columns of any dtype plus, for fit/evaluate, a numeric target column",
+    "columns": "unique column names; `drop_columns` are removed before encoding",
+    "target": "numeric, finite, no missing values, at least MIN_DISTINCT_TARGETS distinct values",
+    "distinct_targets": [
+      2,
+      null
+    ],
+    "features": [
+      1,
+      null
+    ],
+    "inference_input": "exactly the fitted feature columns (after `drop_columns`), no target or output columns",
+    "preprocessing": "numeric columns are kept (NaN passes to TabDPT's support-fitted mean imputer); other columns are mapped to fitted integer codes with dedicated missing and unknown codes; upstream standardisation and any PCA basis are fitted on the support rows and reused at inference"
+  },
+  "inputs": [
+    {
+      "id": "new_rows.csv",
+      "mode": "inference",
+      "rows": 8,
+      "feature_columns": [
+        "age",
+        "sex",
+        "bmi",
+        "bp",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6"
+      ],
+      "missing_value_columns": {}
+    }
+  ],
+  "target_column": null,
+  "drop_columns": [],
+  "verdict": "accepted",
+  "findings": [
+    {
+      "input": "missing-column-probe",
+      "verdict": "rejected",
+      "message": "Feature schema mismatch; missing=['age'], extra=[]"
+    }
+  ],
+  "model_id": "Layer6/TabDPT",
+  "model_revision": "4462ffbd1d8dea25d4862d30beed4b70cd596ae5",
+  "id_columns": [
+    "row_id"
+  ]
+}
+[colab] Executing cell 8/9 - tabdpt_regressor_artifact_inference-23...
+Running stage 'predict' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor_artifact_inference/bca6a23ff73c/logs/predict.log
+Requested context_size: 512 effective support rows <= 353
+ row_id  prediction
+    287    152.0143
+    211    179.1587
+     72    153.5520
+    321    277.8263
+     73    116.0210
+    418     99.6420
+    367    270.2233
+    354    200.3705
+{
+  "verdict": "not-measurable",
+  "sample_kind": "sample",
+  "reason": "no labelled holdout rows were supplied for the scored table"
+}
+['tabdpt_regressor_artifact_inference_evaluation_report.json', 'tabdpt_regressor_artifact_inference_input_manifest.json', 'tabdpt_regressor_artifact_inference_predictions.csv', 'tabdpt_regressor_artifact_inference_result.json']
+[colab] Executing cell 9/9 - tabdpt_regressor_artifact_inference-26...
+Optional activity skipped: tick RUN_ACTIVITY to run it. The canonical outputs are complete.
+[colab] Saving notebook with outputs to '/home/kurt/colab-runs/tabdpt-regressor-pipeline-e54340a-bfb3a3/tabdpt_regressor_artifact_inference_colab_e54340a_colab-cli-t4_output.ipynb'...

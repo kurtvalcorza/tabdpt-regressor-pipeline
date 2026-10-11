@@ -10,103 +10,97 @@ Notebook Specification 1.1. This file is the durable release-gate record for bot
 
 CI runs `tools/validate_release_assets.py`, which checks, for each of the two notebooks:
 
-- notebook JSON parses; every code cell compiles as plain Python (no `%`/`!` magics); no
-  persisted outputs or execution counts; no unresolved placeholder markers; every code cell
-  is preceded by an explanatory markdown cell;
-- exactly the two tutorial notebooks, each named in `tutorials/README.md` with its profile, the
-  notebook-spec version and the standalone carrier; `metadata.dimer` declares that profile, spec `1.1`,
-  `standalone: true` and `generated_from` (repository, module commit, the three module paths, the package
-  SHA-256, generator); `dimer_runtime.py`'s top-level `__main__` guard is rewritten to `if False:` by the
-  generator so the worker entrypoint cannot execute inside the kernel;
-- the standalone carrier (ST1–ST6, PAR1–PAR3): no clone, repository install or repository import on the
-  primary path; three cells tagged `embedded_module`, in dependency order, equal to
-  `src/tabdpt_regressor_pipeline/{pipeline,artifact,dimer_runtime}.py` after the generator's documented
-  rewrite (the `DEFAULT_WEIGHTS_DIR` line) and the removal of package-relative imports; the inline `MANIFEST`
-  equal to the committed `weights/tabdpt-1.2/dimer-base-manifest.json` and the inline `PINS` equal to the
-  `pyproject.toml` runtime pins; the notebook byte-identical to `tools/build_notebook.py` output for its
-  template; the pinned-install cell with its restart-on-stale-import guard; `NOTEBOOK_SOURCE` recorded in exports;
-- `MODEL_ID`/`MODEL_REVISION` are bound only in the carried module cells (and repeated in the inline manifest,
-  which the notebook asserts against the module before fetching), the revision is a 40-hex immutable commit, and
-  the same identity string appears in `README.md`, `MODEL_CARD.md`, and `weights/README.md` with no stray revisions
-  (the upstream `TabDPT-inference` code commit is the one permitted extra 40-hex string);
-- the profile-specific public-API calls — E2E: `stage_missing_files`, `verify_snapshot`,
-  `TabDPTRegressionPipeline.from_pretrained(weights_dir=..., compile_model=False, use_flash=False, seed=42)`,
-  `validate_inputs`, `training_mean_baseline`, `fit`, `evaluate`, `evaluation_report`, `predict`,
-  `export_artifact_bundle`, `load_verified_artifact` with the no-refit and equivalence assertions; companion:
-  `validate_artifact_bundle` before reconstruction, `load_verified_artifact(..., model_weight_path=pipe.model_weight_path, ...)`,
-  the fail-closed legacy-path and target-column checks, `validate_inputs(..., target_column=None, feature_columns=...)`,
-  `predict`, a `not-measurable` `evaluation_report` — the ceiling prints (`MIN_DISTINCT_TARGETS`,
-  the model feature ceiling), the four exports per notebook, the learner-facing regression statements
-  (continuous point estimates only, no uncertainty interval, MAE/RMSE in target units, no gradient training,
-  no-refit reload, trust boundary, no artifact created in the companion) and the gated-off BYOD
-  default; forbidden patterns (credential-in-URL, any `git clone` / `github.com` / repository import on the primary
-  path, a mutable `revision='main'`, `worker.run(` / `worker_cli(` / `subprocess.run([` outside the generator-owned
-  install cell, direct `from tabdpt import` / `TabDPTRegressor(` / `resolve_tabdpt_weights(` / `hf_hub_download(` /
-  `sklearn.metrics` use **outside the carried module cells**, `trust_remote_code=True`, `pickle.load`, `torch.load(`,
-  `extractall(`; in the companion also `load_diabetes(`, `export_artifact_bundle(`, `.fit(` outside the modules);
-- `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no
-  document makes an unsupported release-grade, production-readiness or benchmark claim;
+- notebook JSON parses; every code cell compiles as plain Python (no `%`/`!` magics); no persisted outputs or
+  execution counts; no unresolved placeholder markers; every code cell is preceded by an explanatory markdown cell;
+- exactly the two tutorial notebooks, each named in `tutorials/README.md` with its profile, the notebook-spec version
+  and the standalone carrier; `metadata.dimer` declares that profile, spec `2.2`, mode `GUIDED`, `standalone: true` and
+  `generated_from` (repository, generating commit, package module paths and SHA-256, carried-file digests,
+  generator `build_notebook.py/3.0-tabular`);
+- the standalone carrier and the isolated environment (ST1–ST6, PAR1–PAR3, RUN1, RUN10, ENV6): one carrier cell whose
+  `CARRIED_FILES` / `CARRIED_BINARY` equal the repository's package (`src/tabdpt_regressor_pipeline/`), the notebook's
+  stage runner (`tools/tutorial_stages.py` or `tools/tutorial_stages_artifact_inference.py`), the hash lock
+  `tutorials/requirements-colab.lock.txt` (which must pin every `pyproject.toml` runtime pin, every entry hashed), the
+  committed snapshot manifest, the licence and, for the companion, `examples/sample-artifact/`; `CARRIED_HASHES` match;
+  the notebook is byte-identical to `tools/build_notebook.py` output for its template; no cell pip-installs into the
+  notebook kernel and no text asks for a runtime restart; the install cell uses a pinned `uv` wheel, a managed CPython,
+  `--require-hashes`, a lock-digest-keyed environment that is reused, `MPLBACKEND=Agg`, and drops
+  `PYTHONPATH`/`PYTHONHOME`/`PYTHONSTARTUP`; the four Infrastructure cells are collapsed (`cellView: form`); every
+  learner cell runs a stage;
+- the profile-specific public-API calls in the carried stage runner — E2E: `from_pretrained(weights_dir=..., compile_model=False,
+  use_flash=False, seed=SEED)`, `validate_inputs`, `training_mean_baseline`, the linear-regression reference with its
+  split-to-split R² range, `fit`, `evaluate`, `evaluation_report`, `predict`,
+  `export_artifact_bundle`, `load_verified_artifact` in a fresh process with the no-refit and equivalence checks, the
+  BYOD refusals for an absent, blank or non-numeric target and for a table below 10 rows; companion: the trusted-digest check before `validate_artifact_bundle`,
+  `load_verified_artifact(..., model_weight_path=<verified checkpoint>, compile_model=False, use_flash=False)`, the
+  fail-closed legacy-path and target-column checks, `validate_inputs(..., target_column=None, feature_columns=...)`,
+  `predict`, a `not-measurable` `evaluation_report` — the exports per notebook, the learner-facing
+  regression statements and the guided layer (how-to-use, task contract, roadmap, glossary, predictions,
+  checkpoints, troubleshooting, conclusion), and the optional-input gates at their non-interactive defaults; no
+  `assert` in the stage runners (verdicts are reported, contract checks raise with a message); forbidden patterns
+  (credential-in-URL, any `git clone` / `github.com/kurtvalcorza` on the primary path, a mutable `revision='main'`,
+  direct `tabdpt` / `huggingface_hub` / `sklearn` / `torch` use in the notebook's own cells, `trust_remote_code=True`,
+  `pickle.load`, `torch.load(`, `extractall(`; in the companion also `load_diabetes(`, `export_artifact_bundle(`,
+  `.fit(` in its stage runner);
+- `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no document makes an
+  unsupported release-grade, production-readiness or benchmark claim;
 - `MODEL_CARD.md` front matter, single H1, required heading order, and immutable provenance.
 
-CI also runs `ruff`, `tools/build_notebook.py --check` for both templates, `scripts/validate_repo.py`,
-`scripts/validate_colab_tutorial.py` (the repository's earlier source checks, kept and updated to spec 1.1) and the
-offline unit suite (`tests/`, including `test_snapshot_helpers.py`, `test_role_helpers.py` and
-`test_notebook_parity.py`; injected downloader, no weights, no model). These are source/provenance and unit checks.
-They are **not** execution evidence.
+CI also runs `tools/build_notebook.py --check` for both templates, `scripts/validate_repo.py`,
+`scripts/validate_colab_tutorial.py` and the offline unit suite (`tests/`, including `test_notebook_parity.py`,
+`test_companion_parity.py` and `test_notebook_review_fixes.py`, which execs the notebooks' own kernel cells with
+stand-ins and runs the model-free stages; injected downloader, no weights, no model). `tools/build_sample_artifact.py
+--check` reproduces the pinned sample artifact byte for byte. These are source/provenance and unit checks. They are
+**not** execution evidence.
 
 ## Executor paths
 
 | Path | Runtime | Role |
 |---|---|---|
-| Google Colab (supported user path) | Colab CPU or GPU runtime, Python 3.11+ | The runtime the tutorials are written for; a clean top-to-bottom run here is promotion evidence |
-| Kaggle CLI kernel | Kaggle kernel, Python 3.11+ image | Reproducible clean-room executor of the same class; the notebook is pushed verbatim plus one leading shim cell that provides `google.colab` and chdirs to a scratch directory (no repository checkout is needed — the notebooks are standalone). For the companion the shim also places the E2E run's `outputs/artifact/` and a separately generated unlabelled CSV, and sets `ARTIFACT_DIR` / `NEW_DATA_PATH` to them |
-| Local harness (pre-flight only) | Workstation, sequential cell executor with a `google.colab` shim (this repository ships none; the classifier repository's `scripts/execute_notebook_release.py` is the closest model, minus its `/content` rewriting — the standalone pair writes under `outputs/`) | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and not promotion evidence |
+| Google Colab (supported user path) | Colab T4 GPU runtime (CPU also works); the kernel's Python does not matter — the stages run in an isolated CPython 3.12.12 environment | The runtime the tutorials are written for; a clean one-pass top-to-bottom run here is promotion evidence |
+| Kaggle kernel | Kaggle T4 kernel | Reproducible clean-room executor of the same class; the notebook is pushed verbatim (no repository checkout is needed — the notebooks are standalone, and the companion's default path needs no supplied files) |
+| Local harness (pre-flight only) | Workstation | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and not promotion evidence. `scripts/execute_notebook_release.py` was written for the previous repository-installing pair and does not apply to the /3 notebooks |
 
 ## Supported release verification procedure
 
 Before changing the registry status from `Candidate` to `Release-grade`:
 
 1. resolve the exact PR/commit head under review and confirm static CI is green;
-2. open the exact E2E notebook revision in a new CPU (or CUDA) runtime (Colab, or the Kaggle executor above)
-   with **no repository checkout** and a clean model cache;
-3. run it top-to-bottom without editing implementation cells (form parameters at their defaults for the
-   sample path: `USE_BYOD = False`, `CATEGORICAL_COLUMNS = []`);
-4. verify that Section 1 reports `NOTEBOOK_SOURCE.repository_revision` equal to the module commit recorded in
-   `metadata.dimer.generated_from` and that the installed core package versions equal the inline `PINS`
-   (= `pyproject.toml`; note `huggingface-hub==0.36.2` differs from the 0.33.2 of the previous `requirements-colab.txt` lock set);
+2. open the exact E2E notebook revision in a **fresh** Colab T4 runtime (or the Kaggle executor) with no repository
+   checkout and a clean model cache;
+3. choose **Run all** once, with every form field at its default (`USE_BYOD = False`, `RUN_ACTIVITY = False`); no
+   restart may be needed — record `restarted: false`;
+4. verify that Section 2 reports the generating revision recorded in `metadata.dimer.generated_from`, and that the
+   isolated environment reports Python 3.12.12, `torch` 2.7.1, `tabdpt` 1.2.0, `numpy` 2.3.0, `pandas` 2.3.2,
+   `scikit-learn` 1.7.0 and `cuda: True` on a T4; then re-run the Section 2 install cell once and check
+   `environment_reused: True`;
 5. verify every default-path stage completes:
-   - pinned runtime installed from the inline `PINS` with no GitHub access;
-   - the three carried module cells execute (define `TabDPTRegressionPipeline`, the artifact helpers and the
-     DIMER runtime, whose `__main__` guard is disabled) with no import of the repository package;
-   - pinned `Layer6/TabDPT` acquisition at the immutable revision through the package: the inline `MANIFEST` is
-     asserted against the module identity and written to `weights/tabdpt-1.2/`,
-     `stage_missing_files(WEIGHTS_DIR, allow_download=True)` reports the one manifest entry (`tabdpt1_2.safetensors`,
-     254,098,072 bytes) on a clean runtime, `verify_snapshot` returns the manifest dict, and `from_pretrained(...)`
-     reports `source == 'local-snapshot'` without loading a model;
-   - the diabetes sample loaded from the installed scikit-learn with its CSV SHA-256 printed, the ceiling
-     (`MIN_DISTINCT_TARGETS` 2) and request parameters surfaced;
-   - `validate_inputs` writes `outputs/tabdpt_regressor_input_manifest.json` (verdict `accepted`, one recorded
-     rejection finding from the missing-target probe); the random 80/20 split is reported;
-   - `training_mean_baseline`, `fit` (in-context conditioning, `use_flash=False`), the capacity report
-     (`modelFeatureCeiling`, `featureReductionActive`, imputer), and `evaluate` with MAE / RMSE / R²;
-   - `evaluation_report` writes `outputs/tabdpt_regressor_evaluation_report.json` with verdict `sample-sanity`,
-     the three metric ids and the training-mean baseline;
-   - `predict` on 8 held-out rows; `outputs/tabdpt_regressor_predictions.csv` (`row_id`, `prediction`) and `outputs/tabdpt_regressor_result.json` written with `NOTEBOOK_SOURCE`, model
-     revision, model licence, runtime versions and device;
-   - `export_artifact_bundle` writes `outputs/artifact/{artifact.json,training_context.parquet}`; the copy in
-     `outputs/artifact-reload/` reloads through `load_verified_artifact` with `preprocessing_restored_ is True`
-     and predictions equal within `rtol=1e-5, atol=1e-6`;
-6. in a **second** clean runtime, run the exact companion notebook revision with `ARTIFACT_DIR` pointing at a copy of
-   the E2E run's `outputs/artifact/` and `NEW_DATA_PATH` at a separately generated unlabelled CSV (or supply both
-   through the upload dialog); verify `validate_artifact_bundle` passes before reconstruction, the reconstructed
-   `preprocessing_restored_ is True` and the target column matches, `validate_inputs(..., target_column=None, ...)` writes
-   `outputs/tabdpt_regressor_artifact_inference_input_manifest.json` with one recorded rejection finding, predictions
-   and the `not-measurable` `outputs/tabdpt_regressor_artifact_inference_evaluation_report.json`,
-   `..._predictions.csv` and `..._result.json` are written;
+   - `weights`: `fetched` names `tabdpt1_2.safetensors` (254,098,072 bytes) on a clean runtime and `verify_snapshot`
+     passes;
+   - `data` / `validate`: the diabetes sample (442 rows, CSV SHA-256 printed), the input manifest with one recorded
+     rejection finding, the 353 / 89 random split;
+   - `condition`: capacity (`modelFeatureCeiling`, `featureReductionActive`, imputer) and TabDPT's MAE, RMSE and R²
+     beside the training-mean baseline (MAE 64.01, RMSE 73.22, R² −0.012) and the linear-regression reference (MAE 42.79,
+     RMSE 53.85, R² 0.453; R² 0.332–0.585 over 20 seeded splits) — record TabDPT's printed numbers;
+   - `report`: `outputs/tabdpt_regressor_evaluation_report.json` with verdict `sample-sanity`, both baselines and the
+     interpretation;
+   - `predict`: `outputs/tabdpt_regressor_predictions.csv`, `outputs/tabdpt_regressor_new_rows.csv` and
+     `outputs/tabdpt_regressor_result.json` with the runtime identity and device;
+   - `export` / `reload`: `outputs/artifact/{artifact.json,training_context.parquet}`, the printed artifact digest and
+     `matches_pinned_sample_artifact` (record it; `True` confirms the companion's pinned sample), then the fresh-process
+     reload with `preprocessing_restored_ is True` and predictions within `rtol=1e-5, atol=1e-6`;
+6. in a **second** fresh runtime, run the exact companion notebook revision with every field at its default (no upload):
+   verify the trusted digest of the pinned sample is `verified`, `validate_artifact_bundle` passes before
+   reconstruction, `preprocessing_restored_ is True` and the target column matches, the input manifest has one recorded
+   rejection finding, and the predictions, the `not-measurable` evaluation report (`sample_kind: sample`) and the result
+   JSON are written; then the REL12 journey: one compatible user input (the E2E run's `outputs/artifact/` with its
+   printed digest in `EXPECTED_ARTIFACT_SHA256` and its `outputs/tabdpt_regressor_new_rows.csv` with
+   `ID_COLUMNS = ['row_id']`) and one incompatible input (a digest with one changed character, or rows with a missing
+   column), plus, in the E2E notebook, one compatible and one incompatible BYOD CSV (blank or non-numeric targets) through
+   `BYOD_PATH` or the upload dialog;
 7. verify the exports exist and the interpretation sections match the observed paths;
-8. record the notebook Git blob ids, commit, runtime (platform, Python, PyTorch, tabdpt, device),
-   model identifier and immutable revision, whether the model cache was clean, outcome, produced
-   outputs, and any warning or applicable `SHOULD` deviation in the table below;
+8. record the notebook Git blob ids, commit, runtime (platform, Python, PyTorch, tabdpt, device), `restarted`,
+   model identifier and immutable revision, whether the model cache was clean, outcome, the printed metrics, the
+   artifact digest, and any warning or applicable `SHOULD` deviation in the table below;
 9. record no access tokens or other secrets.
 
 A known-failing default path in the supported runtime blocks release.
@@ -122,22 +116,49 @@ for the stated runtime, not general estimates.
 
 | Date (UTC) | Commit / notebook blob | Executor | Path exercised | Wall | Outcome |
 |---|---|---|---|---|---|
-| 2026-09-14 | `46c5e17` / `0611e07348b4` | Kaggle T4 (`kurtvalcorza/dimer-nb2-tabdpt-regressor` v1) | Default sample path | 231.7 s | **PASSED** — 11/11 ok code cells executed cleanly, 4 files, 254 MB staged |
-| | | | Standalone ARTIFACT-INFERENCE with an external artifact | | pending — queued to the GPU lane |
+| 2026-09-14 | `46c5e17` / `0611e07348b4` | Kaggle T4 (`kurtvalcorza/dimer-nb2-tabdpt-regressor` v1) | Default sample path | 231.7 s | **PASSED** — 11/11 ok code cells executed cleanly, 4 files, 254 MB staged (previous E2E blob, superseded; outcome only — no metrics, package versions or `restarted` flag were recorded) |
+| 2026-10-10 | `e54340a` / `7c878eb19872` of `tabdpt_regressor_colab.ipynb`, downloaded from GitHub at the PR head and blob-verified before the session; executed file `docs/execution-evidence/2026-10-10/tabdpt_regressor_colab_e54340a_colab-cli-t4.ipynb`, sha256 `39f10ab9a8b9c0c126cda21724151afc0044c70434b0565c6cd6212f7ef2b13f` (`…_run_summary.json` `99bb8739f90c…`, `…_exec.log` `063393aab372…`) | Colab CLI 0.7.4 sequential execution, fresh Colab Tesla T4 (15,360 MiB, reported by cell 1), via the workspace `colab-cli-serial-test-suite`; isolated uv CPython 3.12.12 environment from the carried hash lock (55 packages; torch 2.7.1, tabdpt 1.2.0, numpy 2.3.0, pandas 2.3.2, scikit-learn 1.7.0). Not a browser Run all; the CLI records no execution counts, so order is evidenced by its `Executing cell k/N` log (1/11–11/11) | E2E default path: Diabetes sample, 353 support / 89 holdout rows, in-context conditioning only (no fine-tuning), device cuda; weight `tabdpt1_2.safetensors` fetched from the Hub at revision `4462ffbd1d8d` and digest-verified (`06680220…`) | 171.0 s session wall | **PASSED — one pass, no restart, 0 errors, 11/11 code cells.** Missing-target probe rejected; TabDPT holdout MAE 40.9804, RMSE 51.6813, R² 0.4959 — identical to the CPU reference to 4 decimals; training-mean baseline 64.0065 / 73.2225 / −0.012; standardised linear regression 42.7941 / 53.8534 / 0.4526; linear R² over 20 seeded splits 0.3322–0.5851 (median 0.4596). `matches_pinned_sample_artifact: True` — the exported artifact's SHA-256 `0f75e2582eb283e9…` equals the pinned sample's. Fresh-process reload PASSED: preprocessing restored without refit, max abs prediction difference 0.0. Optional activity not run. Carried provenance names `df095f8` (generation-time HEAD, not `e54340a`). Status stays **Candidate** |
+| 2026-10-10 | `e54340a` / `ec42aa44be9f` of `tabdpt_regressor_artifact_inference_colab.ipynb`, downloaded from GitHub at the PR head and blob-verified before the session; executed file `docs/execution-evidence/2026-10-10/tabdpt_regressor_artifact_inference_colab_e54340a_colab-cli-t4.ipynb`, sha256 `8043429ae96f68ac65745f643098153a1dff0acd5d02fc6e3a4ca39c6891c2cf` (`…_run_summary.json` `7621aa13118b…`, `…_exec.log` `63cbdba3d473…`) | Colab CLI 0.7.4 sequential execution, fresh Colab Tesla T4, via the workspace `colab-cli-serial-test-suite`; same 55-package isolated uv environment. Not a browser Run all; order from the CLI log (1/9–9/9) | Companion default path: the carried sample artifact (no release, no upload), base weight fetched from the Hub and digest-verified | 107.7 s session wall | **PASSED — one pass, no restart, 0 errors, 9/9 code cells.** No upload in any output; trusted digest verified (`0f75e2582eb283e9…`, format `tabdpt-dimer-context-v3`); preprocessing restored without refit; missing-column probe rejected (`Feature schema mismatch; missing=['age']`); the 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision (a finer comparison is not visible in the outputs). Optional activity not run. Carried provenance `df095f8`. Status stays **Candidate** |
+
+### CI integration execution (not clean-runtime evidence)
+
+The pull request's `Notebook integration execution` job (`.github/workflows/notebook-release.yml`) ran both notebooks top to
+bottom with nbconvert on a GitHub-hosted `ubuntu-24.04` CPU runner, each stage in the environment the notebook itself built
+from `tutorials/requirements-colab.lock.txt` (CPython 3.12.12, `torch` 2.7.1+cu126, `tabdpt` 1.2.0), with the real checkpoint
+downloaded from the Hub at the pinned revision. The companion was parametrised to take the E2E run's artifact by the CI
+upload shim with its trusted digest, so its default (pinned-sample) path was not exercised there. It is not a Colab run and
+does not count toward promotion.
+
+| Date (UTC) | Commit / notebook blob | Path exercised | Outcome |
+|---|---|---|---|
+| 2026-10-05 | `a67ffd2` / `7c878eb19872` (E2E) | Default sample path, CPU | 11/11 code cells, no error. TabDPT holdout MAE 40.98 / RMSE 51.68 / R² 0.496; standardised linear regression 42.79 / 53.85 / 0.453 (R² 0.332–0.585 over 20 seeded splits); training mean 64.01 / 73.22 / −0.012. Exported `artifact.json` SHA-256 `0f75e258…c783` and `training_context.parquet` `186ce81d…4b28`, byte-identical to `examples/sample-artifact/` (`matches_pinned_sample_artifact: True`) |
+| 2026-10-05 | `a67ffd2` / `ec42aa44be9f` (companion) | The E2E run's artifact by upload with its trusted digest, eight independent rows by upload, CPU | 9/9 code cells, no error |
+
+### Local lock-only drives (not clean-runtime evidence)
+
+These ran the notebooks' own code cells in order (nbclient, a separate ipykernel venv) in a Linux x86_64 WSL2 container,
+CPU only (`CUDA_VISIBLE_DEVICES=-1`), with every stage in the environment the notebook itself built from
+`tutorials/requirements-colab.lock.txt` (55 packages, `torch` 2.7.1+cu126, `tabdpt` 1.2.0). One local deviation: the pinned
+checkpoint was pre-seeded into `weights/tabdpt-1.2/` after a SHA-256 check (this container's IPv6 route to the Hub stalls);
+the stage then reported `fetched: []` and re-verified it. They are not hosted runs and do not count toward promotion.
+
+| Date (UTC) | Commit / notebook blob | Path exercised | Wall | Outcome |
+|---|---|---|---|---|
+| 2026-10-11 | `a67ffd2` / `ec42aa44be9f` (companion) | Defaults: pinned sample artifact and rows, no upload | 453 s (incl. 391 s environment build) | 9/9 code cells, no error. `trusted_digest: verified` (`0f75e258…c783`), `sample_kind: sample`, report `not-measurable`; the eight predictions equal the CI E2E run's (max abs difference 4.6e-5; row 287: 152.0143) |
+| 2026-10-11 | `a67ffd2` / `7c878eb19872` (E2E) | Default sample path | 36 s (environment reused) | 11/11 code cells, no error. TabDPT holdout MAE 40.9804 / RMSE 51.6813 / R² 0.4959 (equal to the CI run); `matches_pinned_sample_artifact: True` |
 
 ## Current status
 
-No clean-runtime execution of the standalone notebooks has been recorded yet; both runs are **pending**
-and queued to the GPU lane. Static validation (`tools/validate_release_assets.py`), nbformat validation, a
+**2026-10-10 — one-pass hosted runs of both current blobs are recorded** (the 2026-10-10 rows of the clean-runtime table): `tabdpt_regressor_colab.ipynb` (`7c878eb19872`) and `tabdpt_regressor_artifact_inference_colab.ipynb` (`ec42aa44be9f`) at `e54340a`, each by Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (not a browser Run all), no restart, 0 error outputs. Notes for the reviewer: (a) the T4 metrics are identical to the CPU reference to 4 decimals (MAE 40.9804 / RMSE 51.6813 / R² 0.4959), and the exported artifact's SHA-256 equals the pinned sample's (`0f75e258…`); (b) the companion's 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision — a finer comparison is not visible in the outputs; (c) both carried revision labels read `df095f8` (generation-time HEAD, not `e54340a`) — follow-up; (d) the optional activity was not run; (e) the maintainer accepted the carried sample (no release; Apache-2.0, no weights; byte-identical to a real CI export at `a67ffd2`). Both notebooks stay **Candidate**; remaining gates: reviewer confirmation of these runs, the BYOD journeys and the optional activities.
+
+Before 2026-10-10: no clean-runtime execution of the current standalone notebook blobs had been recorded (the 2026-09-14 Kaggle row is
+the previous E2E blob). The CI integration execution above
+is the first real execution of the standalone path, the checkpoint download and the helper stages, on CPU only. Static validation (`tools/validate_release_assets.py`), nbformat validation, a
 `compile()` sweep over every code cell, and the offline unit suite passed on the tutorial source at
 the candidate revision, which is necessary but not sufficient. The registry status remains
 **Candidate** until a reviewer confirms a recorded run against the notebook blobs under review and
-an integrator promotes it; promotion is not performed by the builder. Facts a reviewer should weigh:
-`stage_missing_files` was exercised only with an injected downloader in the unit suite (the real
-`hf_hub_download` fetch of `tabdpt1_2.safetensors` into a fresh `weights/tabdpt-1.2/` has not been executed);
-`from_pretrained` loads no model, so the first real load of the checkpoint through the snapshot path happens inside
-`fit`; no execution of the previous notebook pair was ever recorded either (issue #15); and the standalone
-carrier itself — executing the three carried module cells in a runtime that has no repository checkout — has been
-validated statically only (parity PASS, carrier probe with the package import blocked), never run. The clean runs
-will be the first execution of the standalone path, of the staging path, and of the helper stages
-(`validate_inputs`, `training_mean_baseline`, `evaluation_report`) against the real weights.
+an integrator promotes it; promotion is not performed by the builder. Facts a reviewer should weigh: the real `hf_hub_download` fetch of `tabdpt1_2.safetensors`, the standalone carrier, the
+helper stages (`validate_inputs`, `training_mean_baseline`, `evaluation_report`) and the first real load of the checkpoint
+inside `fit` have run only in the CPU CI integration execution above, never on a GPU or in Colab; no execution of the previous
+notebook pair was ever recorded (issue #15); and the companion's default pinned-sample path has run only in the local lock-only drive above, so the Colab T4 run
+will be its first hosted execution.

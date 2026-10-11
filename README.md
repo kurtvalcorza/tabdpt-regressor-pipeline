@@ -67,7 +67,7 @@ For DIMER, mount/cache the verified base weight through `DIMER_BASE_MODEL_PATH` 
 
 ## Release status
 
-**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. No clean-runtime run of either notebook has been recorded yet; complete `docs/release-verification.md` against the exact release revision before calling either notebook release-grade.
+**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. Of the standalone pair, only an earlier E2E blob (`0611e073`) has a hosted run (Kaggle T4, 2026-09-14, outcome only); the current blobs of both notebooks have no hosted run yet, only GitHub-hosted CI integration execution (not a Colab run). Complete `docs/release-verification.md` against the exact release revision before calling either notebook release-grade.
 
 ## Evaluation caveat
 

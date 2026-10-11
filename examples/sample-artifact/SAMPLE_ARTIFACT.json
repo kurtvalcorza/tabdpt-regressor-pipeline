@@ -1,0 +1,23 @@
+{
+  "description": "Pinned sample artifact for the ARTIFACT-INFERENCE notebook's default path: the serving artifact the E2E notebook exports on its default path (support rows + fitted preprocessing; no model output).",
+  "producer": "tools/build_sample_artifact.py: the E2E stage runner's stage_data + stage_validate and the package's fit + export_artifact_bundle, with tabdpt.TabDPTRegressor replaced by the fit-time preprocessing of tabdpt 1.2.0 (mean SimpleImputer + StandardScaler; no PCA basis); no checkpoint is read",
+  "e2e_cross_check": "the E2E notebook's export stage prints matches_pinned_sample_artifact for its default path",
+  "data": "scikit-learn load_diabetes (Efron et al. 2004; 442 rows, 10 standardised features), seeded 80/20 split, seed 42",
+  "support_rows": 353,
+  "new_rows": 8,
+  "artifact_sha256": "0f75e2582eb283e969d1ec8914034ca0254c7b34674744b98a729219987ac783",
+  "files": {
+    "artifact.json": {
+      "bytes": 2454,
+      "sha256": "0f75e2582eb283e969d1ec8914034ca0254c7b34674744b98a729219987ac783"
+    },
+    "training_context.parquet": {
+      "bytes": 18770,
+      "sha256": "186ce81debfc9893fb098fd59505fc4350b0f2c471bdcf0397f11dade0104b28"
+    },
+    "new_rows.csv": {
+      "bytes": 1725,
+      "sha256": "b5f27db2645f4c941da607143ffbddb571fca2bb926839fc0b6c1abbf2419e4d"
+    }
+  }
+}

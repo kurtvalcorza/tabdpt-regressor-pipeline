@@ -1,17 +1,12 @@
-"""NOTEBOOK_SPEC 2.0 parity tests (PAR1–PAR3, ST1) for the ARTIFACT-INFERENCE companion notebook.
-
-`tests/test_notebook_parity.py` is the fleet's copy and covers the primary template only; this file runs the
-same checks against `tools/notebook_template_artifact_inference.py` and the notebook it generates.
-"""
+"""ARTIFACT-INFERENCE companion: shared package keys, the pinned sample artifact it carries, and no self-production."""
+# ruff: noqa: E501
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
-import re
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
@@ -25,73 +20,35 @@ def _load(name: str):
     return module
 
 
-build = _load("build_notebook")
 TEMPLATE = _load("notebook_template_artifact_inference").TEMPLATE
 PRIMARY = _load("notebook_template").TEMPLATE
-NOTEBOOK = ROOT / "tutorials" / TEMPLATE["notebook_name"]
-MANIFEST = ROOT / "weights" / TEMPLATE["weights_key"] / "dimer-base-manifest.json"
-
-
-@pytest.fixture(scope="module")
-def notebook() -> dict:
-    if not NOTEBOOK.exists():
-        pytest.skip(f"{NOTEBOOK.name} not generated yet")
-    return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-
-
-def _cells(notebook: dict, cell_type: str) -> list[dict]:
-    return [c for c in notebook["cells"] if c["cell_type"] == cell_type]
-
-
-def _source(cell: dict) -> str:
-    src = cell["source"]
-    return "".join(src) if isinstance(src, list) else src
 
 
 def test_companion_shares_the_primary_package_keys() -> None:
     assert TEMPLATE["profile"] == "ARTIFACT-INFERENCE"
     assert TEMPLATE["notebook_name"] != PRIMARY["notebook_name"]
-    for key in ("package", "repo_name", "pipeline_class", "weights_key", "modules", "entry_module"):
+    for key in ("package", "repo_name", "weights_key", "modules", "entry_module", "lock", "managed_python", "uv", "install_flags"):
         assert TEMPLATE.get(key) == PRIMARY.get(key), key
 
 
-def test_par1_embedded_modules_equal_repository_modules(notebook: dict) -> None:
-    tagged = [
-        c for c in _cells(notebook, "code") if c.get("metadata", {}).get("dimer", {}).get("embedded_module")
-    ]
-    recorded = notebook["metadata"]["dimer"]["generated_from"]["revision"]
-    ctx = build.load_context(ROOT, TEMPLATE, recorded)
-    assert [c["metadata"]["dimer"]["embedded_module"] for c in tagged] == ctx["module_rels"]
-    for cell, module in zip(tagged, ctx["modules"], strict=True):
-        rel = f"{ctx['pkg_rel']}/{module}"
-        assert cell["metadata"]["dimer"]["module_sha256"] == ctx["per_module_sha256"][rel]
-        assert _source(cell).rstrip("\n") + "\n" == ctx["embedded"][module], rel
+def test_companion_carries_the_pinned_sample_artifact() -> None:
+    """TDRA-M1: the default path's artifact and rows are carried, with the recorded digests."""
+    record = json.loads((ROOT / "examples/sample-artifact/SAMPLE_ARTIFACT.json").read_text(encoding="utf-8"))
+    carried = set(TEMPLATE["carried_extra"]) | set(TEMPLATE["carried_binary"])
+    assert carried == {"sample-artifact/artifact.json", "sample-artifact/new_rows.csv", "sample-artifact/SAMPLE_ARTIFACT.json", "sample-artifact/training_context.parquet"}
+    import hashlib
+
+    for name, facts in record["files"].items():
+        data = (ROOT / "examples/sample-artifact" / name).read_bytes()
+        assert len(data) == facts["bytes"] and hashlib.sha256(data).hexdigest() == facts["sha256"], name
+    assert record["artifact_sha256"] == record["files"]["artifact.json"]["sha256"]
 
 
-def test_par2_inline_manifest_and_pins_match_repository(notebook: dict) -> None:
-    code = "\n".join(_source(c) for c in _cells(notebook, "code"))
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    inline = re.search(r"^MANIFEST = (\{.*?^\})$", code, re.MULTILINE | re.DOTALL)
-    assert inline and json.loads(inline.group(1)) == manifest
-    pins_block = re.search(r"^PINS = \[(.*?)^\]", code, re.MULTILINE | re.DOTALL)
-    assert pins_block and re.findall(r"'([^']+)'", pins_block.group(1)) == build._pins(ROOT, TEMPLATE)
-    meta = notebook["metadata"]["dimer"]
-    assert meta["standalone"] is True
-    assert meta["notebook_profile"] == "ARTIFACT-INFERENCE"
-    assert meta["generated_from"]["module_sha256"] == build.load_context(ROOT, TEMPLATE)["module_sha256"]
-
-
-def test_par3_generator_check_is_clean(notebook: dict) -> None:
-    recorded = notebook["metadata"]["dimer"]["generated_from"]["revision"]
-    rendered = build.to_bytes(build.render(ROOT, TEMPLATE, recorded))
-    current = NOTEBOOK.read_bytes().replace(b"\r\n", b"\n")
-    assert current == rendered, "companion notebook is stale; regenerate it with --template"
-
-
-def test_st1_primary_path_has_no_repository_dependency(notebook: dict) -> None:
-    code = "\n".join(_source(c) for c in _cells(notebook, "code"))
-    assert "git" not in re.findall(r"subprocess\.run\(\[([^\]]*)\]", code).__str__()
-    assert f"import {TEMPLATE['package']}" not in code
-    assert f"from {TEMPLATE['package']}" not in code
-    assert "github.com/kurtvalcorza" not in code
-    assert "worker.run(" not in code and "worker_cli(" not in code
+def test_companion_never_self_produces() -> None:
+    runner = (TOOLS / "tutorial_stages_artifact_inference.py").read_text(encoding="utf-8")
+    nb = json.loads((ROOT / "tutorials" / TEMPLATE["notebook_name"]).read_text(encoding="utf-8"))
+    own = "\n".join("".join(c["source"]) if isinstance(c["source"], list) else c["source"] for c in nb["cells"] if c["cell_type"] == "code" and not c.get("metadata", {}).get("dimer", {}).get("embedded_sources"))
+    for marker in ("load_breast_cancer(", "export_artifact_bundle(", ".fit("):
+        assert marker not in runner and marker not in own, marker
+    calls = {n.func.attr for n in ast.walk(ast.parse(runner)) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    assert {"validate_artifact_bundle", "load_verified_artifact", "validate_inputs", "evaluation_report"} <= calls
