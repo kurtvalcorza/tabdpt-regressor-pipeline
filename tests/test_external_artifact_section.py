@@ -201,6 +201,105 @@ def test_section_extracts_exactly_the_layout_the_export_writes(tmp_path) -> None
     assert (out / "training_context.parquet").read_bytes() == b"PAR1-stand-in"
 
 
+# ---------------------------------------------------------------- SART9: the ZIP is produced in-run by the export stage
+
+
+def _two_builds(tmp_path: Path) -> tuple[Path, Path]:
+    """Two independent builds of the same member bytes: separate directories, different mtimes, reversed write order."""
+    (tmp_path / "one").mkdir()
+    first_dir = _artifact_dir(tmp_path / "one")
+    second_dir = tmp_path / "two" / "artifact"
+    second_dir.mkdir(parents=True)
+    (second_dir / "training_context.parquet").write_bytes((first_dir / "training_context.parquet").read_bytes())
+    (second_dir / "artifact.json").write_bytes((first_dir / "artifact.json").read_bytes())
+    for member in second_dir.iterdir():
+        os.utime(member, (1_700_000_000, 1_700_000_000))
+    return STAGES.deterministic_zip(first_dir, tmp_path / "one.zip"), STAGES.deterministic_zip(second_dir, tmp_path / "two.zip")
+
+
+def test_export_zip_is_byte_stable_across_two_builds(tmp_path) -> None:
+    first, second = _two_builds(tmp_path)
+    assert first.read_bytes() == second.read_bytes()
+    assert hashlib.sha256(first.read_bytes()).hexdigest() == hashlib.sha256(second.read_bytes()).hexdigest()
+    with zipfile.ZipFile(first) as zf:
+        infos = zf.infolist()
+    assert {i.create_system for i in infos} == {3}, "a fixed creator OS, so the digest does not depend on the host"
+
+
+class _FakePipe:
+    model_weight_path = "weights/stand-in.safetensors"
+
+    def predict(self, rows, **_):
+        return pd.Series([150.0] * len(rows))
+
+
+def _export_run(tmp_path: Path, monkeypatch, *, with_result: bool = True):
+    """The real ``stage_export`` with the model replaced by a stand-in that writes the two artifact members."""
+
+    def fake_artifact_dir_writer(_pipe, _train, art):
+        art = Path(art)
+        art.mkdir(parents=True)
+        (art / "artifact.json").write_text(json.dumps({"trainingContext": {"sha256": "9" * 64}}) + "\n", encoding="utf-8")
+        (art / "training_context.parquet").write_bytes(b"PAR1-stand-in")
+        return art / "artifact.json"
+
+    monkeypatch.setattr(STAGES, "package", lambda _root: types.SimpleNamespace(export_artifact_bundle=fake_artifact_dir_writer))
+    monkeypatch.setattr(STAGES, "conditioned_pipeline", lambda *_a: _FakePipe())
+    root = _root(tmp_path)
+    run = STAGES.Run(root, tmp_path / "outputs", tmp_path / "weights", {})
+    run.write_state("data.json", {"target": "target"})
+    run.write_state("condition.json", {"controls": {}})
+    frame = pd.DataFrame({"x": [1.0, 2.0, 3.0], "target": [151.0, 75.0, 141.0]})
+    frame.to_parquet(run.state / "train.parquet", engine="pyarrow")
+    frame.to_parquet(run.state / "test.parquet", engine="pyarrow")
+    if with_result:
+        run.write_output(f"{STAGES.STEM}_result.json", {"metrics": {"mae": 1.0}})
+    return run
+
+
+def test_export_stage_writes_the_zip_in_run_and_records_its_sha256(tmp_path, monkeypatch) -> None:
+    """SART9: the default path's export stage itself writes outputs/<stem>_artifact.zip and records its SHA-256 in the
+    run's result, so a sample-artifact release is that file uploaded unchanged, not a ZIP assembled after the run."""
+    run = _export_run(tmp_path, monkeypatch)
+    _quiet(STAGES.stage_export, run)
+    archive = run.out / STAGES.ARTIFACT_ZIP
+    assert archive.is_file() and not list(run.out.glob("*.tmp"))
+    result = json.loads((run.out / f"{STAGES.STEM}_result.json").read_text(encoding="utf-8"))
+    assert result["metrics"] == {"mae": 1.0}, "the export adds its record without dropping the run's results"
+    record = result["artifact"]
+    assert record["zip"] == STAGES.ARTIFACT_ZIP and record["zip_path"] == f"outputs/{STAGES.ARTIFACT_ZIP}"
+    assert record["zip_sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert record["zip_bytes"] == archive.stat().st_size
+    assert record["zip_members"] == ["artifact.json", "training_context.parquet"]
+    # the ZIP equals a deterministic rebuild of the exported directory and passes the section's extraction unchanged
+    assert archive.read_bytes() == STAGES.deterministic_zip(run.out / "artifact", tmp_path / "rebuilt.zip").read_bytes()
+    extracted = STAGES.safe_extract_artifact(archive, tmp_path / "bundle")
+    assert (extracted / "training_context.parquet").read_bytes() == b"PAR1-stand-in"
+
+
+def test_export_stage_refuses_to_export_without_the_runs_result_record(tmp_path, monkeypatch) -> None:
+    run = _export_run(tmp_path, monkeypatch, with_result=False)
+    with pytest.raises(RuntimeError, match=r"_result\.json is missing: run Section 8"):
+        _quiet(STAGES.stage_export, run)
+
+
+def test_in_run_zip_with_a_wrong_pinned_digest_is_refused_before_extraction(tmp_path, monkeypatch) -> None:
+    """A re-pin accepts the export ZIP only at its recorded digest: one changed byte is refused before extraction."""
+    run = _export_run(tmp_path, monkeypatch)
+    _quiet(STAGES.stage_export, run)
+    archive = run.out / STAGES.ARTIFACT_ZIP
+    recorded = json.loads((run.out / f"{STAGES.STEM}_result.json").read_text(encoding="utf-8"))["artifact"]["zip_sha256"]
+    tampered = tmp_path / "tampered.zip"
+    data = bytearray(archive.read_bytes())
+    data[-1] ^= 0x01
+    tampered.write_bytes(bytes(data))
+    cache = tmp_path / "cache" / "external_artifact.zip"
+    with pytest.raises(ValueError, match="Trusted digest mismatch.*nothing was extracted"):
+        STAGES.fetch_pinned_artifact(cache, tampered.resolve().as_uri(), recorded)
+    assert not cache.exists() and not cache.with_name(cache.name + ".part").exists()
+    assert STAGES.fetch_pinned_artifact(cache, archive.resolve().as_uri(), recorded) == cache
+
+
 @pytest.mark.parametrize(
     "members",
     [

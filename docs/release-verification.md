@@ -171,6 +171,15 @@ before the first commit:
 | `tabdpt_regressor_colab_c61b0f0_colab-cli-t4_exec.log` | `4bd5fe898a0d201be1c5850115fade392b71cb5fe32b86032f052edbf94bbef2` | `e0025d564f9a82e3a5e7abde8b7009313a054c2d1b2417113d164c133925fb19` |
 | `tabdpt_regressor_colab_c61b0f0_colab-cli-t4_suite.log` | `bcc39a5fb8cd98a88f166ffed4e7a086f583fb8cda1d5e0600ba72cc59b2bc84` | `9a77e009c4dda4f4649a16f3bd826c03eca3067b786fe29906b1ff8a719b969a` |
 
+**In-run export identity run (2026-10-22, `b869ab5` / blob `23e0a7eaa0d1`, PR #27; SART9).** Colab CLI 0.7.5 `colab exec -f` on a fresh Colab Tesla T4, default path of `tutorials/tabdpt_regressor_colab.ipynb` at the head of `spec3/sart9-inrun-zip`, started 2026-10-22T12:53:36Z, wall 160.2 s, exit 0, input unchanged, 14/14 code cells, no error; verdict PASS. Evidence: `docs/execution-evidence/2026-10-22-b869ab5/`. The export stage wrote `outputs/tabdpt_regressor_artifact.zip` in-run and recorded `artifact.zip_sha256` `66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244` in the run's result file. That digest equals the release asset of `sample-artifact-diabetes-v1` byte for byte, as the export of the `c61b0f0` run did. Section 10 downloaded the pinned asset and verified the same digest before extraction. Local paths were replaced by `<local-run-dir>/` before the first commit:
+
+| File (under `execution-evidence/2026-10-22-b869ab5/`) | Captured | Committed |
+|---|---|---|
+| `tabdpt_regressor_colab_b869ab5_colab-cli-t4.ipynb` | `3133770ac6c6d77d04c141b9d27cc9a8c2fc1f5a37b8f862fe4f5a52e32dc297` | unchanged (no local path) |
+| `tabdpt_regressor_colab_b869ab5_colab-cli-t4_exec.log` | `ee648c28ea9a4683243d4b61ff506fc7bfdfa8bfafc4a450049f1b07c043789c` | `9e08a6b5d5980e5d032c5b976055c79eabeeee7b583011bba0dd8c365de1c984` |
+| `tabdpt_regressor_colab_b869ab5_colab-cli-t4_run_summary.json` | `66db956e190dbb8aaf9c5db8e90b090903668aa1943760548c782d63ee06933b` | unchanged (no local path) |
+| `tabdpt_regressor_colab_b869ab5_colab-cli-t4_suite.log` | `34bba8ec33c9239a2f7fbde233387af60e97107c358dde0cd841f72e86e16e41` | `b55feb938ee0ff5d276eafe6b277f74c493146b91eaaff3ebf97ff88decffc07` |
+
 ### Local lock-only drives (not clean-runtime evidence)
 
 These ran the notebooks' own code cells in order (nbclient, a separate ipykernel venv) in a Linux x86_64 WSL2 container,
@@ -186,7 +195,19 @@ the stage then reported `fetched: []` and re-verified it. They are not hosted ru
 
 ## Current status
 
-**2026-10-10 — one-pass hosted runs of both current blobs are recorded** (the 2026-10-10 rows of the clean-runtime table): `tabdpt_regressor_colab.ipynb` (`7c878eb19872`) and `tabdpt_regressor_artifact_inference_colab.ipynb` (`ec42aa44be9f`) at `e54340a`, each by Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (not a browser Run all), no restart, 0 error outputs. Notes for the reviewer: (a) the T4 metrics are identical to the CPU reference to 4 decimals (MAE 40.9804 / RMSE 51.6813 / R² 0.4959), and the exported artifact's SHA-256 equals the pinned sample's (`0f75e258…`); (b) the companion's 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision — a finer comparison is not visible in the outputs; (c) both carried revision labels read `df095f8` (generation-time HEAD, not `e54340a`) — follow-up; (d) the optional activity was not run; (e) the maintainer accepted the carried sample (no release; Apache-2.0, no weights; byte-identical to a real CI export at `a67ffd2`). Both notebooks stay **Candidate**; remaining gates: reviewer confirmation of these runs, the BYOD journeys and the optional activities.
+**Current status (2026-10-22): Candidate.** Recorded: the hosted Colab T4 run of blob `23e0a7eaa0d1` at `b869ab5` (PR #27; Colab CLI, not a browser Run all) passed the default path end to end, including Section 10 with the v1 pin (see "In-run export identity run" above). The earlier run of blob `b00122574c48` at `c61b0f0` is history for the current blob (REL14). The notebook stays Candidate pending:
+
+1. **REL12:** a BYOD run that accepts one representative input through the downstream stages and refuses one
+   incompatible input;
+2. **REL2:** a run in the hosted runtime's browser interface for the interactive journeys (BYOD upload, the optional
+   activity toggle, the own-artifact ZIP);
+3. **a run of the optional activity** (off by default; every recorded run printed it as skipped).
+
+**SART9 is met by identity (owner ruling, 2026-10-22).** The release asset of `sample-artifact-diabetes-v1` was packed on the VM after the `1e816d9` run from that run's exported `outputs/artifact/`. Since then the notebook's own export stage writes the deterministic ZIP in-run (sorted members, 1980-01-01 00:00:00, mode 0644, `create_system` 3, atomic write) and records its SHA-256 under `artifact.zip_sha256`. The in-run ZIP of the hosted runs at `c61b0f0` and `b869ab5` is byte-identical to the v1 asset (`66f3d162…`), so the pinned bytes are the export of the default path of a recorded run. The owner chose to keep the v1 pin rather than republish identical bytes under a new tag.
+
+**SART7 deviation (2026-10-22).** `sample-artifact-diabetes-v1` is a mutable release: this repository does not enable immutable releases. The notebook pins the asset's SHA-256 (`SAMPLE_ARTIFACT_SHA256` = `66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244`), and Section 10 refuses the download before extraction unless the digest matches, so a replaced asset cannot be used silently. The owner accepted this deviation on 2026-10-22.
+
+**History, 2026-10-10 — one-pass hosted runs of both blobs current at that time (the 2.2-era pair) were recorded** (the 2026-10-10 rows of the clean-runtime table): `tabdpt_regressor_colab.ipynb` (`7c878eb19872`) and `tabdpt_regressor_artifact_inference_colab.ipynb` (`ec42aa44be9f`) at `e54340a`, each by Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (not a browser Run all), no restart, 0 error outputs. Notes for the reviewer: (a) the T4 metrics are identical to the CPU reference to 4 decimals (MAE 40.9804 / RMSE 51.6813 / R² 0.4959), and the exported artifact's SHA-256 equals the pinned sample's (`0f75e258…`); (b) the companion's 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision — a finer comparison is not visible in the outputs; (c) both carried revision labels read `df095f8` (generation-time HEAD, not `e54340a`) — follow-up; (d) the optional activity was not run; (e) the maintainer accepted the carried sample (no release; Apache-2.0, no weights; byte-identical to a real CI export at `a67ffd2`). Both notebooks stay **Candidate**; remaining gates: reviewer confirmation of these runs, the BYOD journeys and the optional activities.
 
 Before 2026-10-10: no clean-runtime execution of the current standalone notebook blobs had been recorded (the 2026-09-14 Kaggle row is
 the previous E2E blob). The CI integration execution above
