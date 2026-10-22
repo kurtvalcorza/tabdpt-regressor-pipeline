@@ -30,7 +30,7 @@ def _load(name: str):
 
 
 build = _load("build_notebook")
-TEMPLATES = {name: _load(name).TEMPLATE for name in ("notebook_template", "notebook_template_artifact_inference")}
+TEMPLATES = {name: _load(name).TEMPLATE for name in ("notebook_template",)}
 
 
 def _notebook(template: dict) -> dict:
@@ -92,7 +92,7 @@ def test_par3_generator_check_is_clean(name: str) -> None:
     recorded = notebook["metadata"]["dimer"]["generated_from"]["revision"]
     rendered = build.to_bytes(build.render(ROOT, template, recorded))
     current = (ROOT / "tutorials" / template["notebook_name"]).read_bytes().replace(b"\r\n", b"\n")
-    assert current == rendered, "notebook is stale; run python tools/build_notebook.py (with --template for the companion)"
+    assert current == rendered, "notebook is stale; run python tools/build_notebook.py"
 
 
 @pytest.mark.parametrize("name", sorted(TEMPLATES))

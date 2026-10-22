@@ -23,7 +23,7 @@ required = [
     "README.md", "MODEL_CARD.md", "DIMER_CONTRACT.md", "LICENSE",
     "TABULAR_REGRESSION_DATASET_SPEC.md", "dimer-pipeline.json",
     "dimer_entrypoint.py", "pyproject.toml", "tutorials/tabdpt_regressor_colab.ipynb",
-    "tutorials/tabdpt_regressor_artifact_inference_colab.ipynb", "DEPLOYMENT.md",
+    "DEPLOYMENT.md",
     "weights/README.md", "tutorials/README.md", "tutorials/requirements-colab.txt",
     "src/tabdpt_regressor_pipeline/artifact.py", "examples/sample-data/DATASET_CARD.md",
     "examples/build_sample_datasets.py",

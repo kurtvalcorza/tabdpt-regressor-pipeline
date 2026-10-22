@@ -21,7 +21,6 @@ TUTORIALS_DIR = ROOT / "tutorials"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 EXPECTED_PROFILES = {
     "tabdpt_regressor_colab.ipynb": "E2E",
-    "tabdpt_regressor_artifact_inference_colab.ipynb": "ARTIFACT-INFERENCE",
 }
 
 # Disallow developer/author workstation paths like C:\Users or /home/username.
@@ -129,8 +128,8 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
     profile = dimer.get("notebook_profile")
     if profile not in ALLOWED_PROFILES:
         raise AssertionError(f"{nb_path.name}: missing/invalid metadata.dimer.notebook_profile")
-    if dimer.get("notebook_spec") != "2.2":
-        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '2.2'")
+    if dimer.get("notebook_spec") != "3.0":
+        raise AssertionError(f"{nb_path.name}: metadata.dimer.notebook_spec must be '3.0'")
     if dimer.get("standalone") is not True:
         raise AssertionError(f"{nb_path.name}: metadata.dimer.standalone must be true (spec 2.0 §4)")
     expected = EXPECTED_PROFILES.get(nb_path.name)
@@ -176,38 +175,22 @@ def _validate_profile_contract(nb_path: Path, nb: dict, source_text: str) -> Non
         if "smoke tutorial" in source_text.lower():
             raise AssertionError(f"{nb_path.name}: E2E notebook must not identify itself as smoke")
 
-    if profile == "ARTIFACT-INFERENCE":
+    if profile == "E2E":  # the closing external-artifact section (NOTEBOOK_SPEC 3.0 §19.1), which replaced the companion
         required = {
-            "external upload": "files.upload(",
-            "trusted digest": "EXPECTED_ARTIFACT_SHA256",
-            "pinned sample artifact": "sample-artifact/SAMPLE_ARTIFACT.json",
+            "pinned sample artifact": "SAMPLE_ARTIFACT_SHA256",
+            "digest before extraction": "check_trusted_digest(",
+            "safe extraction": "safe_extract_artifact(",
             "pre-load artifact validation": "validate_artifact_bundle(",
             "verified serving reconstruction": "load_verified_artifact(",
             "no-refit reload assertion": "preprocessing_restored_",
-            "new-data inference": ".predict(",
-            "machine-readable predictions": "to_csv(",
-            "provenance export": "provenance",
+            "data contract (SART10)": "check_data_contract(",
+            "separate outputs (XAS6)": "outputs/external_artifact/",
             "trust-boundary explanation": "Trust boundary",
-            "legacy compatibility distinction": "legacy compatibility",
-            "missing-value policy": "numericMissingPolicy",
-            "categorical missing policy": "categoricalMissingPolicy",
-            "unknown-category policy": "unknownCategoryPolicy",
-            "feature ceiling": "modelFeatureCeiling",
-            "feature reduction visibility": "featureReductionActive",
-            "context visibility": "effective support rows",
+            "setup-only dependency (XAS5)": "This section needs only the setup cells",
         }
-        _require_markers(nb_path, profile, source_text, required)
-        forbidden = {
-            "self-created sample dataset": "load_diabetes(",
-            "artifact creation": "export_artifact_bundle(",
-            "in-notebook support fitting": ".fit(",
-        }
-        own_cells = _source_text(nb, outside_modules=True) + "\n" + carried_runner(nb)  # the carried package defines these names
-        for label, marker in forbidden.items():
-            if marker in own_cells:
-                raise AssertionError(
-                    f"{nb_path.name}: ARTIFACT-INFERENCE must not perform {label} ({marker!r})"
-                )
+        _require_markers(nb_path, "external-artifact section", source_text, required)
+    if list(nb_path.parent.glob("*_artifact_inference_colab.ipynb")):
+        raise AssertionError("KND11: no separate artifact-inference notebook may ship beside the E2E notebook")
 
 
 def validate_notebook(nb_path: Path) -> None:

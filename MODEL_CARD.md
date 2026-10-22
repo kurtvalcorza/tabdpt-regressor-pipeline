@@ -36,19 +36,11 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb) [`tabdpt_classifier_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb)  
   *Install package, fit support table in-context, predict discrete class labels and probabilities, and evaluate test holdout.*
 
-- **Serving Artifact Inference Tutorial**:  
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb) [`tabdpt_classifier_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb)  
-  *Load the exported bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
-
 ### TabDPT Regressor (`tabdpt-regressor-pipeline`)
 
 - **End-to-End Pipeline Tutorial**:  
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_colab.ipynb) [`tabdpt_regressor_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_colab.ipynb)  
-  *Install package, fit support table in-context, predict continuous target values, and evaluate regression metrics (MAE, RMSE, R²).*
-
-- **Serving Artifact Inference Tutorial**:  
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb) [`tabdpt_regressor_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/blob/main/tutorials/tabdpt_regressor_artifact_inference_colab.ipynb)  
-  *Load the exported bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
+  *Install package, fit support table in-context, predict continuous target values, and evaluate regression metrics (MAE, RMSE, R²). Its closing section verifies and serves a pinned serving artifact made by an earlier recorded run (the former artifact-inference notebook, folded in under NOTEBOOK_SPEC 3.0).*
 
 > [!NOTE]
 > All tutorial notebooks are configured with `use_flash=False` to ensure portable out-of-the-box execution across Google Colab Tesla T4 accelerators (`sm_75`) as well as modern Ampere/Hopper GPUs (`sm_80+`).

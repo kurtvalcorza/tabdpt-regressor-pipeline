@@ -1,14 +1,14 @@
 """Static release-asset validation for the TabDPT regressor DIMER pipeline.
 
-Checks the two STANDALONE tutorial notebooks (DIMER Notebook Specification 2.0 §4) — the `E2E`
-tutorial and its `ARTIFACT-INFERENCE` companion — the tutorial registry, model card, README, STATUS.md
+Checks the STANDALONE `E2E` tutorial notebook (DIMER Notebook Specification 3.0 §4), including its closing
+external-artifact section (§19.1, which replaced the retired `ARTIFACT-INFERENCE` companion; KND11) — the tutorial registry, model card, README, STATUS.md
 and weight documentation for source conformance and cross-document identity consistency, and runs the
 generator parity checks (PAR1–PAR3) for every notebook.
 
 This is source validation only. A PASS here is NOT clean-runtime execution evidence;
 the release gate is defined in docs/release-verification.md.
 
-Two-notebook variant of the fleet validator (snapshot resnet50 @ 6c77f84, tooling updates 2026-09-13 15:40 + 17:10):
+Single-notebook (formerly two-notebook) variant of the fleet validator (snapshot resnet50 @ 6c77f84, tooling updates 2026-09-13 15:40 + 17:10):
 the constants block declares NOTEBOOKS (one entry per generated notebook: template, profile, gates, outputs,
 markers), PACKAGE_DIR, IDENTITY_DOCS and EXPECTED_CARD_SPEC; the shared block is the snapshot's (per-module
 PAR1 through build.load_context, joined-module digest, own-repo and mutable-git-dependency rules) with the
@@ -67,8 +67,8 @@ NOTEBOOKS = {
     "tabdpt_regressor_colab.ipynb": {
         "template": "notebook_template",
         "profile": "E2E",
-        "byod_gates": {"USE_BYOD": False, "BYOD_PATH": "", "RUN_ACTIVITY": False},
-        "stages": ("weights", "data", "validate", "condition", "report", "predict", "export", "reload", "activity"),
+        "byod_gates": {"USE_BYOD": False, "BYOD_PATH": "", "RUN_ACTIVITY": False, "ARTIFACT_SOURCE": "Pinned sample artifact", "ARTIFACT_ZIP_PATH": "", "EXPECTED_ZIP_SHA256": "", "USE_OWN_ROWS": False, "EXTERNAL_ROWS_PATH": ""},
+        "stages": ("weights", "data", "validate", "condition", "report", "predict", "export", "reload", "activity", "external_artifact", "external_reconstruct", "external_predict"),
         "expected_outputs": (
             "{STEM}_input_manifest.json",
             "{STEM}_evaluation_report.json",
@@ -100,7 +100,20 @@ NOTEBOOKS = {
             "reloaded = P.load_verified_artifact(reload_dir / \"artifact.json\", model_weight_path=reference[\"weight\"], compile_model=False, use_flash=False, seed=SEED)",
             "if reloaded.preprocessing_restored_ is not True:",
             "np.testing.assert_allclose(np.asarray(reference[\"predictions\"]), pred2.to_numpy(), rtol=RELOAD_RTOL, atol=RELOAD_ATOL)",
-            "matches_pinned_sample_artifact",
+            "archive = deterministic_zip(art, run.out / ARTIFACT_ZIP)",
+            "info = zipfile.ZipInfo(name, date_time=ZIP_DATE_TIME)",
+            "Trusted digest of this export",
+            'SAMPLE_ARTIFACT_URL = "https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/releases/download/sample-artifact-diabetes-v1/tabdpt_regressor_artifact.zip"',
+            'SAMPLE_ARTIFACT_SHA256 = "',
+            'EXTERNAL_DIR = "external_artifact"',
+            'zip_path = fetch_pinned_artifact(run.root / "inputs" / "external_artifact.zip", SAMPLE_ARTIFACT_URL, SAMPLE_ARTIFACT_SHA256)',
+            'check_trusted_digest(part, expected, "the pinned SAMPLE_ARTIFACT_SHA256")',
+            "safe_extract_artifact(zip_path, bundle)",
+            'manifest, context_path = P.validate_artifact_bundle(bundle / "artifact.json")',
+            "check_data_contract(found, contract)",
+            'serving = P.load_verified_artifact(Path(art["root"]) / "artifact.json", model_weight_path=weights["weight"], compile_model=False, use_flash=False, seed=SEED)',
+            'out.to_csv(target / f"{STEM}_external_predictions.csv", index=False)',
+            'os.replace(tmp, target / f"{STEM}_external_result.json")',
             "\"model_revision\": P.MODEL_REVISION",
             "\"model_license\": P.MODEL_LICENSE",
             "importlib.metadata.version(\"tabdpt\")",
@@ -127,6 +140,11 @@ NOTEBOOKS = {
             "run_stage('predict')",
             "run_stage('export')",
             "run_stage('reload')",
+            "ARTIFACT_SOURCE = 'Pinned sample artifact'  # @param",
+            "USE_OWN_ROWS = False  # @param",
+            "run_stage('external_artifact', source='pinned')",
+            "run_stage('external_reconstruct')",
+            "run_stage('external_predict'",
         ),
         "markdown_markers": (
             "**Capability:** supervised tabular regression by in-context conditioning",
@@ -139,71 +157,13 @@ NOTEBOOKS = {
             "**no-preprocessing-refit**",
             "classification, gradient fine-tuning, or calibrated per-prediction uncertainty intervals",
             "training-mean baseline",
+            "## 10. Using an artifact made elsewhere",
+            "**This section needs only the setup cells (Sections 1–3).**",
+            "**Trust boundary.**",
+            "this section shows that an artifact made elsewhere can be validated and served here",
+            "outputs/external_artifact/",
         ),
         "forbidden_runner": (),
-    },
-    "tabdpt_regressor_artifact_inference_colab.ipynb": {
-        "template": "notebook_template_artifact_inference",
-        "profile": "ARTIFACT-INFERENCE",
-        "byod_gates": {"ARTIFACT_DIR": "", "UPLOAD_ARTIFACT": False, "NEW_DATA_PATH": "", "UPLOAD_NEW_DATA": False, "RUN_ACTIVITY": False},
-        "stages": ("weights", "artifact", "reconstruct", "rows", "predict", "activity"),
-        "expected_outputs": (
-            "{STEM}_input_manifest.json",
-            "{STEM}_evaluation_report.json",
-            "{STEM}_result.json",
-            "{STEM}_predictions.csv",
-        ),
-        "runner_markers": (
-            'STEM = "tabdpt_regressor_artifact_inference"',
-            "manifest, context_path = P.validate_artifact_bundle(copy / \"artifact.json\")",
-            "serving = P.load_verified_artifact(run.state / \"artifact\" / \"artifact.json\", model_weight_path=weights[\"weight\"], compile_model=False, use_flash=False)",
-            "if getattr(serving, \"preprocessing_restored_\", False) is not True:",
-            "if serving.target_column != target_column:",
-            "input_manifest = P.validate_inputs(features, None, feature_columns=expected, names=[name])",
-            "P.validate_inputs(features.drop(columns=[expected[0]]), None, feature_columns=expected)",
-            "pred = serving.predict(features, **kw)",
-            "report = P.evaluation_report(None, n_holdout=0, target_column=serving.target_column, sample_kind=rows[\"sample_kind\"])",
-            "check_trusted_digest(manifest_path, expected)",
-            "Trusted digest mismatch",
-            "\"modelFeatureCeiling\": model_feature_ceiling",
-            "\"featureReductionActive\": encoded_feature_count > model_feature_ceiling",
-            "\"numericMissingPolicy\": \"restored training-fitted mean imputation\"",
-            "\"categoricalMissingPolicy\": \"restored fitted missing code\"",
-            "\"unknownCategoryPolicy\": \"restored fitted unknown code\"",
-            "effective support rows <=",
-            "\"model_revision\": P.MODEL_REVISION",
-            "\"model_license\": P.MODEL_LICENSE",
-            "\"use_flash\": False",
-        ),
-        "kernel_markers": (
-            "ARTIFACT_DIR = ''  # @param",
-            "EXPECTED_ARTIFACT_SHA256 = ''  # @param",
-            "NEW_DATA_PATH = ''  # @param",
-            "ID_COLUMNS = []  # @param",
-            "from google.colab import files",
-            "files.upload()",
-            "run_stage('artifact'",
-            "run_stage('reconstruct')",
-            "run_stage('rows'",
-            "run_stage('predict'",
-        ),
-        "markdown_markers": (
-            "**Capability:** serving-state reconstruction from an externally produced DIMER artifact",
-            "produced **outside this execution**",
-            "**no artifact is created here**",
-            "**Trust boundary.**",
-            "legacy compatibility",
-            "**no network fallback**",
-            "**continuous point estimate**",
-            "its verdict is `not-measurable`",
-            "artifact creation, in-notebook support fitting, classification, gradient fine-tuning",
-            "EXPECTED_ARTIFACT_SHA256",
-        ),
-        "forbidden_runner": (
-            "load_diabetes(",
-            "export_artifact_bundle(",
-            ".fit(",
-        ),
     },
 }
 
@@ -213,7 +173,7 @@ NOTEBOOKS = {
 # Specification 2.0; see docs/release-verification.md for the release gate.
 # ---------------------------------------------------------------------------
 
-NOTEBOOK_SPEC = "2.2"
+NOTEBOOK_SPEC = "3.0"
 ALLOWED_PROFILES = {"E2E", "ARTIFACT-INFERENCE", "TASK-INFERENCE", "MULTI-CAPABILITY", "SMOKE"}
 STATUS_TOKENS = ("Candidate", "Release-grade")
 PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|Insert text here|Tooltip:", re.I)
@@ -290,7 +250,8 @@ ISOLATION_MARKERS = (
 # Patterns that must never appear in tutorial code (comment-stripped), in any kernel cell or the stage runner.
 FORBIDDEN_PATTERNS = (
     ("credential in clone URL", re.compile(r"https://[^/'\"\s]*@github\.com/|x-access-token:")),
-    ("repository clone (ST1)", re.compile(r"\bgit\b[^\n]*\bclone\b|github\.com/kurtvalcorza")),
+    # github.com/kurtvalcorza references are checked by disallowed_own_references (ST1): only the exact pinned asset URL.
+    ("repository clone (ST1)", re.compile(r"\bgit\b[^\n]*\bclone\b")),
     ("mutable git dependency (MOD14)", re.compile(r"git\+https?://(?![^\n]*@[0-9a-f]{40}\b)")),
     ("editable self-install", re.compile(r"""['"](?:-e|--editable)['"]|pip install (?:-e|--editable)\b""")),
     ("mutable model reference (MOD14)", re.compile(r"revision\s*=\s*['\"](?:main|latest)['\"]")),
@@ -304,6 +265,31 @@ FORBIDDEN_PATTERNS = (
 )
 # In-kernel installs (TDC-M1): no pip into the notebook kernel, and no restart instruction anywhere.
 KERNEL_INSTALL = re.compile(r"['\"]-m['\"]\s*,\s*['\"]pip['\"]|^\s*[%!]\s*pip\b|['\"]pip install\b|\bpip\.main\(", re.M)
+
+
+# ST1 / SART6: the only github.com/kurtvalcorza reference allowed anywhere in tutorial code is the exact pinned sample-artifact
+# URL of the external-artifact section, in the stage runner only. It is built here from the tag and compared whole: no prefix
+# match, and a reference holding "..", "%2e" (any case), "?" or "#" is refused even before the comparison.
+SAMPLE_ARTIFACT_TAG = "sample-artifact-diabetes-v1"
+PINNED_SAMPLE_ARTIFACT_URL = f"https://github.com/kurtvalcorza/{REPO_NAME}/releases/download/{SAMPLE_ARTIFACT_TAG}/tabdpt_regressor_artifact.zip"
+_OWN_REFERENCE = re.compile(r"github\.com/kurtvalcorza", re.I)
+_REFERENCE_STOP = set(" \t\r\n'\"`<>()[]{},;\\")
+
+
+def disallowed_own_references(text: str, allowed: tuple[str, ...] = ()) -> list[str]:
+    """Every github.com/kurtvalcorza reference in ``text`` that is not exactly one of ``allowed`` (whole token)."""
+    bad = []
+    for match in _OWN_REFERENCE.finditer(text):
+        start, end = match.start(), match.end()
+        while start > 0 and text[start - 1] not in _REFERENCE_STOP:
+            start -= 1
+        while end < len(text) and text[end] not in _REFERENCE_STOP:
+            end += 1
+        reference = text[start:end]
+        traversal = ".." in reference or "%2e" in reference.lower() or "?" in reference or "#" in reference
+        if traversal or reference not in allowed:
+            bad.append(reference)
+    return bad
 
 
 class ValidationError(AssertionError):
@@ -682,6 +668,8 @@ def _validate_notebook_content(path: Path, code_cells: list[tuple[int, str, ast.
         _check('f"' + name in runner_code, f"{path.name}: stage runner must export {name.format(STEM=stem)}")
     present = [label for label, pattern in FORBIDDEN_PATTERNS if pattern.search(kernel) or pattern.search(runner_code)]
     _check(not present, f"{path.name}: forbidden/insecure source: {present}")
+    bad_refs = disallowed_own_references(kernel) + disallowed_own_references(runner_code, (PINNED_SAMPLE_ARTIFACT_URL,))
+    _check(not bad_refs, f"{path.name}: repository reference other than the exact pinned sample-artifact URL (ST1): {bad_refs}")
     leaked = [m for m in FORBIDDEN_OUTSIDE_MODULE if m in kernel]
     _check(not leaked, f"{path.name}: direct library use in the notebook's own cells (G2): {leaked}")
     _check(revision not in kernel, f"{path.name}: the model revision may appear only in the carried files")
