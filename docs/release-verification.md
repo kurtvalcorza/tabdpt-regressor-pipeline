@@ -152,6 +152,25 @@ does not count toward promotion.
 | 2026-10-05 | `a67ffd2` / `7c878eb19872` (E2E) | Default sample path, CPU | 11/11 code cells, no error. TabDPT holdout MAE 40.98 / RMSE 51.68 / R² 0.496; standardised linear regression 42.79 / 53.85 / 0.453 (R² 0.332–0.585 over 20 seeded splits); training mean 64.01 / 73.22 / −0.012. Exported `artifact.json` SHA-256 `0f75e258…c783` and `training_context.parquet` `186ce81d…4b28`, byte-identical to `examples/sample-artifact/` (`matches_pinned_sample_artifact: True`) |
 | 2026-10-05 | `a67ffd2` / `ec42aa44be9f` (companion) | The E2E run's artifact by upload with its trusted digest, eight independent rows by upload, CPU | 9/9 code cells, no error |
 
+**First hosted run of the migrated notebook (2026-10-22, `c61b0f0` / blob `b00122574c48`, Notebook Spec 3.0; the second pass of
+§32.2).** Colab CLI 0.7.4 `colab exec -f` on a fresh Colab Tesla T4, default path of `tutorials/tabdpt_regressor_colab.ipynb` on
+PR #25, started 2026-10-22T04:01:11Z, wall 124.6 s, exit 0, input unchanged; executed cell sources equal the blob (44 cells);
+verdict PASS. Evidence: `docs/execution-evidence/2026-10-22-c61b0f0/`. The fresh reload restored the fitted preprocessing
+without refit. **Section 10 ran end to end on the default path:** it downloaded the release asset of tag
+`sample-artifact-diabetes-v1`, verified SHA-256 `66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244` before
+extraction, rebuilt the regressor from the files alone and wrote `outputs/external_artifact/tabdpt_regressor_external_predictions.csv`
+and `..._external_result.json` (printed in the executed notebook; the files stayed on the released VM). The run's own
+deterministic export, `outputs/tabdpt_regressor_artifact.zip`, printed the same digest `66f3d162…` as the pinned asset: the
+exporter reproduces the published artifact byte for byte on the hosted runtime. Local paths were replaced by `<local-run-dir>/`
+before the first commit:
+
+| File (under `execution-evidence/2026-10-22-c61b0f0/`) | Captured | Committed |
+|---|---|---|
+| `tabdpt_regressor_colab_c61b0f0_colab-cli-t4.ipynb` | `66a9e2e8aba18845e049bd611c28de05fd830a8c142d0ae2e11a54a5c5a8351d` | unchanged (no local path) |
+| `tabdpt_regressor_colab_c61b0f0_colab-cli-t4_run_summary.json` | `d99abe4d78e2bb9ba88918200ed7a4f3221b3438c78a6a08114e5895c89defa2` | unchanged (no local path) |
+| `tabdpt_regressor_colab_c61b0f0_colab-cli-t4_exec.log` | `4bd5fe898a0d201be1c5850115fade392b71cb5fe32b86032f052edbf94bbef2` | `e0025d564f9a82e3a5e7abde8b7009313a054c2d1b2417113d164c133925fb19` |
+| `tabdpt_regressor_colab_c61b0f0_colab-cli-t4_suite.log` | `bcc39a5fb8cd98a88f166ffed4e7a086f583fb8cda1d5e0600ba72cc59b2bc84` | `9a77e009c4dda4f4649a16f3bd826c03eca3067b786fe29906b1ff8a719b969a` |
+
 ### Local lock-only drives (not clean-runtime evidence)
 
 These ran the notebooks' own code cells in order (nbclient, a separate ipykernel venv) in a Linux x86_64 WSL2 container,
