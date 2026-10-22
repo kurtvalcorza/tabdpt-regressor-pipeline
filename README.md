@@ -67,7 +67,7 @@ For DIMER, mount/cache the verified base weight through `DIMER_BASE_MODEL_PATH` 
 
 ## Release status
 
-**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. The last recorded hosted run is of blob `23e0a7eaa0d1` at `b869ab5` (Colab CLI, T4, 2026-10-22, default path PASS; its in-run export ZIP equals the pinned v1 asset); a notebook whose blob changed since then has no recorded run until one is added (REL14). Still pending before promotion: the BYOD accept and refuse journeys (REL12), a browser run (REL2) and a run of the optional activity. See `docs/release-verification.md` → Current status.
+**Candidate.** Static/unit checks do not constitute clean-runtime notebook evidence. The last recorded hosted run is of blob `23e0a7eaa0d1` at `b869ab5` (Colab CLI, T4, 2026-10-22, default path PASS; its in-run export ZIP equals the pinned v1 asset); a notebook whose blob changed since then has no recorded run until one is added (REL14). The optional activity ran once on the same blob (a `RUN_ACTIVITY = True` run copy at `7d4b6f3`, Colab CLI 0.7.5, T4, 2026-10-22, PASS). Still pending before promotion: the BYOD accept and refuse journeys (REL12) and a browser run (REL2). See `docs/release-verification.md` → Current status.
 
 ## Evaluation caveat
 
