@@ -36,10 +36,6 @@ Both pipeline implementations provide ready-to-run interactive Google Colab note
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb) [`tabdpt_classifier_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_colab.ipynb)  
   *Install package, fit support table in-context, predict discrete class labels and probabilities, and evaluate test holdout.*
 
-- **Serving Artifact Inference Tutorial**:  
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb) [`tabdpt_classifier_artifact_inference_colab.ipynb`](https://github.com/kurtvalcorza/tabdpt-classifier-pipeline/blob/main/tutorials/tabdpt_classifier_artifact_inference_colab.ipynb)  
-  *Load the exported bundle (`artifact.json` + `training_context.parquet`), verify SHA-256 digest, and score unlabelled batch data without refitting.*
-
 ### TabDPT Regressor (`tabdpt-regressor-pipeline`)
 
 - **End-to-End Pipeline Tutorial**:  
