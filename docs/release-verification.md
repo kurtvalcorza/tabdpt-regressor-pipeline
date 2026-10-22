@@ -1,26 +1,27 @@
 # Release verification
 
-`tutorials/tabdpt_regressor_colab.ipynb` (`E2E`) and `tutorials/tabdpt_regressor_artifact_inference_colab.ipynb`
-(`ARTIFACT-INFERENCE`) are **release candidates** until the exact notebook revisions have executed
-top-to-bottom in a clean supported runtime. Unit tests, JSON validation, code-cell compilation, and
-`tools/validate_release_assets.py` are necessary checks but are **not** runtime evidence under DIMER
-Notebook Specification 1.1. This file is the durable release-gate record for both notebooks.
+`tutorials/tabdpt_regressor_colab.ipynb` (`E2E`) is a **release candidate** until the exact notebook revision has
+executed top-to-bottom in a clean supported runtime. Unit tests, JSON validation, code-cell compilation, and
+`tools/validate_release_assets.py` are necessary checks but are **not** runtime evidence under DIMER Notebook
+Specification 3.0. This file is the durable release-gate record for the notebook. Under NOTEBOOK_SPEC 3.0 (KND11) the
+former `ARTIFACT-INFERENCE` companion, `tutorials/tabdpt_regressor_artifact_inference_colab.ipynb`, was folded into the
+E2E notebook's closing external-artifact section (Section 10, §19.1); its rows below remain as historical records.
 
 ## Automatic coverage (static, every pull request)
 
-CI runs `tools/validate_release_assets.py`, which checks, for each of the two notebooks:
+CI runs `tools/validate_release_assets.py`, which checks, for the notebook:
 
 - notebook JSON parses; every code cell compiles as plain Python (no `%`/`!` magics); no persisted outputs or
   execution counts; no unresolved placeholder markers; every code cell is preceded by an explanatory markdown cell;
-- exactly the two tutorial notebooks, each named in `tutorials/README.md` with its profile, the notebook-spec version
-  and the standalone carrier; `metadata.dimer` declares that profile, spec `2.2`, mode `GUIDED`, `standalone: true` and
+- exactly one tutorial notebook (no separate artifact-inference notebook, KND11), named in `tutorials/README.md` with its
+  profile, the notebook-spec version and the standalone carrier; `metadata.dimer` declares that profile, spec `3.0`, kind `TUTORIAL`, mode `GUIDED`, `standalone: true` and
   `generated_from` (repository, generating commit, package module paths and SHA-256, carried-file digests,
   generator `build_notebook.py/3.0-tabular`);
 - the standalone carrier and the isolated environment (ST1–ST6, PAR1–PAR3, RUN1, RUN10, ENV6): one carrier cell whose
   `CARRIED_FILES` / `CARRIED_BINARY` equal the repository's package (`src/tabdpt_regressor_pipeline/`), the notebook's
-  stage runner (`tools/tutorial_stages.py` or `tools/tutorial_stages_artifact_inference.py`), the hash lock
+  stage runner (`tools/tutorial_stages.py`), the hash lock
   `tutorials/requirements-colab.lock.txt` (which must pin every `pyproject.toml` runtime pin, every entry hashed), the
-  committed snapshot manifest, the licence and, for the companion, `examples/sample-artifact/`; `CARRIED_HASHES` match;
+  committed snapshot manifest and the licence; `CARRIED_HASHES` match;
   the notebook is byte-identical to `tools/build_notebook.py` output for its template; no cell pip-installs into the
   notebook kernel and no text asks for a runtime restart; the install cell uses a pinned `uv` wheel, a managed CPython,
   `--require-hashes`, a lock-digest-keyed environment that is reused, `MPLBACKEND=Agg`, and drops
@@ -30,26 +31,29 @@ CI runs `tools/validate_release_assets.py`, which checks, for each of the two no
   use_flash=False, seed=SEED)`, `validate_inputs`, `training_mean_baseline`, the linear-regression reference with its
   split-to-split R² range, `fit`, `evaluate`, `evaluation_report`, `predict`,
   `export_artifact_bundle`, `load_verified_artifact` in a fresh process with the no-refit and equivalence checks, the
-  BYOD refusals for an absent, blank or non-numeric target and for a table below 10 rows; companion: the trusted-digest check before `validate_artifact_bundle`,
-  `load_verified_artifact(..., model_weight_path=<verified checkpoint>, compile_model=False, use_flash=False)`, the
-  fail-closed legacy-path and target-column checks, `validate_inputs(..., target_column=None, feature_columns=...)`,
-  `predict`, a `not-measurable` `evaluation_report` — the exports per notebook, the learner-facing
+  BYOD refusals for an absent, blank or non-numeric target and for a table below 10 rows, the deterministic export ZIP
+  (`deterministic_zip`: sorted members, fixed 1980-01-01 timestamp, mode 0644); the external-artifact section: the
+  exact pinned `SAMPLE_ARTIFACT_URL` / `SAMPLE_ARTIFACT_SHA256`, the digest check before extraction, the member-by-member
+  safe extraction, `validate_artifact_bundle`, the SART10 data-contract check (feature columns and target column),
+  `load_verified_artifact(..., model_weight_path=<verified checkpoint>, compile_model=False, use_flash=False)` with the
+  fail-closed legacy-path and target-column checks, and outputs under `outputs/external_artifact/` — the exports, the learner-facing
   regression statements and the guided layer (how-to-use, task contract, roadmap, glossary, predictions,
   checkpoints, troubleshooting, conclusion), and the optional-input gates at their non-interactive defaults; no
   `assert` in the stage runners (verdicts are reported, contract checks raise with a message); forbidden patterns
-  (credential-in-URL, any `git clone` / `github.com/kurtvalcorza` on the primary path, a mutable `revision='main'`,
+  (credential-in-URL, any `git clone`, any `github.com/kurtvalcorza` reference other than the exact pinned sample-artifact
+  URL in the stage runner — compared as a whole token, refusing `..`, `%2e`, `?` and `#` (ST1) — a mutable `revision='main'`,
   direct `tabdpt` / `huggingface_hub` / `sklearn` / `torch` use in the notebook's own cells, `trust_remote_code=True`,
-  `pickle.load`, `torch.load(`, `extractall(`; in the companion also `load_diabetes(`, `export_artifact_bundle(`,
-  `.fit(` in its stage runner);
+  `pickle.load`, `torch.load(`, `extractall(`);
 - `STATUS.md`, `README.md` and `tutorials/README.md` agree on one release-status token and no document makes an
   unsupported release-grade, production-readiness or benchmark claim;
 - `MODEL_CARD.md` front matter, single H1, required heading order, and immutable provenance.
 
-CI also runs `tools/build_notebook.py --check` for both templates, `scripts/validate_repo.py`,
-`scripts/validate_colab_tutorial.py` and the offline unit suite (`tests/`, including `test_notebook_parity.py`,
-`test_companion_parity.py` and `test_notebook_review_fixes.py`, which execs the notebooks' own kernel cells with
-stand-ins and runs the model-free stages; injected downloader, no weights, no model). `tools/build_sample_artifact.py
---check` reproduces the pinned sample artifact byte for byte. These are source/provenance and unit checks. They are
+CI also runs `tools/build_notebook.py --check`, `scripts/validate_repo.py`, `scripts/validate_colab_tutorial.py` and the
+offline unit suite (`tests/`, including `test_notebook_parity.py`, `test_notebook_review_fixes.py`, which execs the
+notebook's own kernel cells with stand-ins and runs the model-free stages, and `test_external_artifact_section.py`, which
+checks the pin, the digest refusal before extraction, the deterministic ZIP, the SART10 contract, the setup-only
+dependency of the section's cells and the ST1 exact-URL rule; injected downloader, no weights, no model). These are
+source/provenance and unit checks. They are
 **not** execution evidence.
 
 ## Executor paths
@@ -57,7 +61,7 @@ stand-ins and runs the model-free stages; injected downloader, no weights, no mo
 | Path | Runtime | Role |
 |---|---|---|
 | Google Colab (supported user path) | Colab T4 GPU runtime (CPU also works); the kernel's Python does not matter — the stages run in an isolated CPython 3.12.12 environment | The runtime the tutorials are written for; a clean one-pass top-to-bottom run here is promotion evidence |
-| Kaggle kernel | Kaggle T4 kernel | Reproducible clean-room executor of the same class; the notebook is pushed verbatim (no repository checkout is needed — the notebooks are standalone, and the companion's default path needs no supplied files) |
+| Kaggle kernel | Kaggle T4 kernel | Reproducible clean-room executor of the same class; the notebook is pushed verbatim (no repository checkout is needed — the notebook is standalone, and its external-artifact section downloads the pinned asset itself) |
 | Local harness (pre-flight only) | Workstation | Builder pre-flight to catch defects before spending cloud runs; **not** a supported runtime and not promotion evidence. `scripts/execute_notebook_release.py` was written for the previous repository-installing pair and does not apply to the /3 notebooks |
 
 ## Supported release verification procedure
@@ -67,7 +71,8 @@ Before changing the registry status from `Candidate` to `Release-grade`:
 1. resolve the exact PR/commit head under review and confirm static CI is green;
 2. open the exact E2E notebook revision in a **fresh** Colab T4 runtime (or the Kaggle executor) with no repository
    checkout and a clean model cache;
-3. choose **Run all** once, with every form field at its default (`USE_BYOD = False`, `RUN_ACTIVITY = False`); no
+3. choose **Run all** once, with every form field at its default (`USE_BYOD = False`, `ARTIFACT_SOURCE = 'Pinned sample artifact'`,
+   `USE_OWN_ROWS = False`, `RUN_ACTIVITY = False`); no
    restart may be needed — record `restarted: false`;
 4. verify that Section 2 reports the generating revision recorded in `metadata.dimer.generated_from`, and that the
    isolated environment reports Python 3.12.12, `torch` 2.7.1, `tabdpt` 1.2.0, `numpy` 2.3.0, `pandas` 2.3.2,
@@ -85,18 +90,20 @@ Before changing the registry status from `Candidate` to `Release-grade`:
      interpretation;
    - `predict`: `outputs/tabdpt_regressor_predictions.csv`, `outputs/tabdpt_regressor_new_rows.csv` and
      `outputs/tabdpt_regressor_result.json` with the runtime identity and device;
-   - `export` / `reload`: `outputs/artifact/{artifact.json,training_context.parquet}`, the printed artifact digest and
-     `matches_pinned_sample_artifact` (record it; `True` confirms the companion's pinned sample), then the fresh-process
-     reload with `preprocessing_restored_ is True` and predictions within `rtol=1e-5, atol=1e-6`;
-6. in a **second** fresh runtime, run the exact companion notebook revision with every field at its default (no upload):
-   verify the trusted digest of the pinned sample is `verified`, `validate_artifact_bundle` passes before
-   reconstruction, `preprocessing_restored_ is True` and the target column matches, the input manifest has one recorded
-   rejection finding, and the predictions, the `not-measurable` evaluation report (`sample_kind: sample`) and the result
-   JSON are written; then the REL12 journey: one compatible user input (the E2E run's `outputs/artifact/` with its
-   printed digest in `EXPECTED_ARTIFACT_SHA256` and its `outputs/tabdpt_regressor_new_rows.csv` with
-   `ID_COLUMNS = ['row_id']`) and one incompatible input (a digest with one changed character, or rows with a missing
-   column), plus, in the E2E notebook, one compatible and one incompatible BYOD CSV (blank or non-numeric targets) through
-   `BYOD_PATH` or the upload dialog;
+   - `export` / `reload`: `outputs/artifact/{artifact.json,training_context.parquet}` and
+     `outputs/tabdpt_regressor_artifact.zip`, the printed `zip_sha256` (record it; on a Linux runtime's default path at an
+     unchanged package and lock it is expected to equal the pinned `66f3d162…d244`, and a difference is recorded, not an
+     error — Section 10 never uses this run's export), then the fresh-process reload with
+     `preprocessing_restored_ is True` and predictions within `rtol=1e-5, atol=1e-6`;
+   - `external_artifact` / `external_reconstruct` / `external_predict` (Section 10): the provenance line printed before
+     the download, `trusted_digest: verified (pinned SAMPLE_ARTIFACT_SHA256)`, `data_contract` matching the diabetes
+     default path, `preprocessing_restored_: True`, eight predictions for `row_id` 287, 211, 72, 321, 73, 418, 367, 354,
+     and `outputs/external_artifact/tabdpt_regressor_external_{predictions.csv,result.json}`;
+6. the REL12 journey in the same notebook: one compatible and one incompatible BYOD CSV (blank or non-numeric targets)
+   through `BYOD_PATH` or the upload dialog; in Section 10, one compatible own input (this run's
+   `outputs/tabdpt_regressor_artifact.zip` with its printed digest in `EXPECTED_ZIP_SHA256` and
+   `outputs/tabdpt_regressor_new_rows.csv` in `EXTERNAL_ROWS_PATH`) and one incompatible one (a digest with one changed
+   character), then switch Section 10 back to its defaults;
 7. verify the exports exist and the interpretation sections match the observed paths;
 8. record the notebook Git blob ids, commit, runtime (platform, Python, PyTorch, tabdpt, device), `restarted`,
    model identifier and immutable revision, whether the model cache was clean, outcome, the printed metrics, the

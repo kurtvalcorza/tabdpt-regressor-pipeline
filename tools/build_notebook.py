@@ -26,7 +26,7 @@ per repository (identical across the six tabular in-context pipelines).
 Usage (from the repository root, or with --repo):
     python tools/build_notebook.py                      # write tutorials/<notebook_name>
     python tools/build_notebook.py --check              # exit 1 if the committed notebook differs (PAR3)
-    python tools/build_notebook.py --template tools/notebook_template_artifact_inference.py [--check]
+    python tools/build_notebook.py --template PATH [--check]   # another template module
     python tools/build_notebook.py --out PATH           # write elsewhere (review copies)
 """
 # ruff: noqa: E501  -- learner-facing prose and generated code are kept on single lines so they render readably
@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 GENERATOR_VERSION = "build_notebook.py/3.0-tabular"
-NOTEBOOK_SPEC = "2.2"
+NOTEBOOK_SPEC = "3.0"
 SOURCE_RECORD = "source.json"
 LOCK_DEST = "requirements.txt"
 RUNNER_DEST = "tutorial_stages.py"
@@ -87,6 +87,8 @@ def template_contract() -> dict[str, str]:
         "carried_extra": "OPTIONAL {destination: repository-relative source} further UTF-8 text files",
         "carried_binary": "OPTIONAL {destination: repository-relative source} binary files, carried as base64",
         "model_host": "OPTIONAL {name, reference_url, revision_label, hosts} for a non-Hub checkpoint host",
+        "notebook_spec": "OPTIONAL declared NOTEBOOK_SPEC version in the notebook metadata (default NOTEBOOK_SPEC)",
+        "notebook_kind": "OPTIONAL notebook kind in the notebook metadata (default 'TUTORIAL', §3.7)",
     }
 
 
@@ -586,7 +588,8 @@ def render(repo: Path, template: dict[str, Any], revision: str | None = None) ->
             "dimer": {
                 "notebook_profile": template["profile"],
                 "notebook_mode": template["mode"],
-                "notebook_spec": NOTEBOOK_SPEC,
+                "notebook_spec": template.get("notebook_spec", NOTEBOOK_SPEC),
+                "notebook_kind": template.get("notebook_kind", "TUTORIAL"),
                 "standalone": True,
                 "requires_dimer_worker": False,
                 "environment": "isolated hash-locked uv environment; nothing installed into the kernel",

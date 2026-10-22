@@ -1,8 +1,11 @@
-"""Regression tests for the 2026-10-05 notebook review (TDR-M1..M2, TDR-m1..m2; TDRA-M1..M3, TDRA-m1..m3).
+"""Regression tests for the 2026-10-05 notebook review (TDR-M1..M2, TDR-m1..m2).
+
+The companion's findings (TDRA-*) retired with the companion notebook (NOTEBOOK_SPEC 3.0, KND11); the trust checks
+they covered now live in tests/test_external_artifact_section.py.
 
 They need only CI's dependencies (no torch, no tabdpt, no checkpoint): they exec the notebooks' own kernel cells with
 stand-ins for `run_stage` and `google.colab`, run the stage runners' model-free stages (`data`, `validate`, `report`,
-`artifact`, `rows`) in-process, and check the generated notebooks statically. Each test names its finding.
+in-process, and check the generated notebooks statically. Each test names its finding.
 """
 # ruff: noqa: E501
 
@@ -26,7 +29,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 E2E = ROOT / "tutorials" / "tabdpt_regressor_colab.ipynb"
-AI = ROOT / "tutorials" / "tabdpt_regressor_artifact_inference_colab.ipynb"
 
 
 def _load(name: str, path: Path):
@@ -38,7 +40,6 @@ def _load(name: str, path: Path):
 
 
 STAGES = _load("tdr_tutorial_stages", TOOLS / "tutorial_stages.py")
-AI_STAGES = _load("tdr_tutorial_stages_ai", TOOLS / "tutorial_stages_artifact_inference.py")
 
 
 def _nb(path: Path) -> dict:
@@ -123,7 +124,7 @@ def _diabetes() -> pd.DataFrame:
 # ---------------------------------------------------------------- TDR-M1 / TDRA-M2: isolated runtime
 
 
-@pytest.mark.parametrize("path", [E2E, AI], ids=["TDR-M1", "TDRA-M2"])
+@pytest.mark.parametrize("path", [E2E], ids=["TDR-M1"])
 def test_m1_no_kernel_install_and_no_restart_instruction(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "Restart the runtime" not in text and "restart the runtime" not in text.replace("no runtime restart", "")
@@ -201,7 +202,7 @@ def test_m1_second_run_all_reuses_the_matching_environment(tmp_path, monkeypatch
 GUIDED = ("## How to use this notebook", "**Who this notebook is for.**", "## The task: Input → Model → Output", "## Roadmap", "<summary><strong>Glossary</strong>", "Predict before running", "**What to notice:**", "Check your reasoning", "## Troubleshooting", "## Conclusion")
 
 
-@pytest.mark.parametrize("path", [E2E, AI], ids=["TDR-M2", "TDRA-M3"])
+@pytest.mark.parametrize("path", [E2E], ids=["TDR-M2"])
 def test_m2_guided_layer_and_collapsed_infrastructure(path: Path) -> None:
     nb = _nb(path)
     md = "\n".join(_src(c) for c in nb["cells"] if c["cell_type"] == "markdown")
@@ -221,7 +222,7 @@ def test_m2_activity_writes_only_to_its_own_directory() -> None:
     assert "ACTIVITY_DIR" in body and "canonical_digests(run)" in body and "before != after" in body
 
 
-@pytest.mark.parametrize("runner", ["tutorial_stages.py", "tutorial_stages_artifact_inference.py"])
+@pytest.mark.parametrize("runner", ["tutorial_stages.py"])
 def test_no_quality_assert_in_stage_runners(runner: str) -> None:
     tree = ast.parse((TOOLS / runner).read_text(encoding="utf-8"))
     assert not [n for n in ast.walk(tree) if isinstance(n, ast.Assert)]
@@ -344,137 +345,7 @@ def test_m2_report_has_linear_reference_and_range(tmp_path) -> None:
     assert "0.332–0.585 over 20 seeded splits" in report["interpretation"]
 
 
-def test_new_rows_file_for_the_companion_matches_the_sample_rows(tmp_path) -> None:
-    """TDR-S2 / TDRA-M1: the E2E notebook's unlabelled rows are the companion's pinned sample rows."""
-    run = _run(tmp_path / "run", tmp_path / "outputs")
-    _quiet(STAGES.stage_data, run)
-    _quiet(STAGES.stage_validate, run)
-    rows = STAGES._new_rows(run.read_frame("test.parquet", "t"), "target").reset_index(names="row_id")
-    pinned = pd.read_csv(ROOT / "examples/sample-artifact/new_rows.csv")
-    pd.testing.assert_frame_equal(rows.reset_index(drop=True), pinned, check_dtype=False)
-
-
-# ---------------------------------------------------------------- TDRA-M1: pinned sample artifact, default path
-
-
-def test_M1_sample_artifact_is_reproduced_byte_for_byte() -> None:
-    """TDRA-M1: tools/build_sample_artifact.py reproduces examples/sample-artifact/ exactly (no model is read)."""
-    builder = _load("tdr_build_sample_artifact", TOOLS / "build_sample_artifact.py")
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        assert builder.main(["--check"]) == 0
-
-
-def test_M1_companion_default_path_uses_the_sample_without_upload(tmp_path, monkeypatch) -> None:
-    """TDRA-M1: both fields at their defaults run the pinned sample artifact and rows; google.colab is never imported."""
-    _no_colab(monkeypatch)
-    ns, calls = _kernel(tmp_path)
-    exec(compile(_cell_with(AI, "ARTIFACT_DIR = ''  # @param"), "<s4>", "exec"), ns)
-    exec(compile(_cell_with(AI, "NEW_DATA_PATH = ''  # @param"), "<s6>", "exec"), ns)
-    assert calls == [("artifact", {"source": "sample", "artifact_dir": "", "expected_sha256": ""}), ("rows", {"source": "sample", "path": "", "id_columns": []})]
-
-
-def _ai_root(tmp_path: Path) -> Path:
-    root = tmp_path / "run"
-    root.mkdir(parents=True)
-    (root / "src").symlink_to(ROOT / "src", target_is_directory=True)
-    shutil.copytree(ROOT / "examples/sample-artifact", root / "sample-artifact")
-    return root
-
-
-def test_M1_artifact_and_rows_stages_on_the_pinned_sample(tmp_path) -> None:
-    """TDRA-M1 / TDRA-m3: the sample artifact verifies against its trusted digest; rows keep `row_id`; sample_kind is 'sample'."""
-    root = _ai_root(tmp_path)
-    run = AI_STAGES.Run(root, tmp_path / "outputs", tmp_path / "weights", {"source": "sample", "expected_sha256": ""})
-    _quiet(AI_STAGES.stage_artifact, run)
-    art = json.loads((root / "state/artifact.json").read_text())
-    pinned = json.loads((ROOT / "examples/sample-artifact/SAMPLE_ARTIFACT.json").read_text())
-    assert art["trusted_digest"] == "verified" and art["artifact_sha256"] == pinned["artifact_sha256"]
-    assert art["contextRows"] == 353 and art["targetColumn"] == "target"
-    run.options = {"source": "sample"}
-    _quiet(AI_STAGES.stage_rows, run)
-    rows = json.loads((root / "state/rows.json").read_text())
-    assert rows == {"source": "sample", "name": "new_rows.csv", "rows": 8, "id_columns": ["row_id"], "sample_kind": "sample"}
-    table = pd.read_parquet(root / "state/rows.parquet")
-    assert table["row_id"].tolist() == [287, 211, 72, 321, 73, 418, 367, 354]
-
-
-# ---------------------------------------------------------------- TDRA-m1: artifact by path + rows by upload
-
-
-def test_m1_artifact_dir_with_empty_rows_outside_and_inside_colab(tmp_path, monkeypatch) -> None:
-    """TDRA-m1: ARTIFACT_DIR set, NEW_DATA_PATH empty: outside Colab a message naming NEW_DATA_PATH (no NameError); in Colab the dialog."""
-    cell = _cell_with(AI, "NEW_DATA_PATH = ''  # @param")
-    _no_colab(monkeypatch)
-    ns, calls = _kernel(tmp_path)
-    ns["artifact_source"] = "directory"
-    with pytest.raises(RuntimeError, match="set NEW_DATA_PATH"):
-        exec(compile(cell, "<s6>", "exec"), ns)
-    monkeypatch.undo()
-    with _colab([{"rows.csv": b"a\n1\n"}]) as files:
-        ns, calls = _kernel(tmp_path)
-        ns["artifact_source"] = "directory"
-        exec(compile(cell, "<s6>", "exec"), ns)
-        assert files.calls == 1 and calls[0][1]["source"] == "upload"
-
-
-# ---------------------------------------------------------------- TDRA-m2: trusted digest
-
-
-def test_m2_rehashed_artifact_is_refused_with_a_trusted_digest(tmp_path) -> None:
-    """TDRA-m2: shuffled support targets + a consistently re-hashed manifest pass validation, but not the trusted digest."""
-    root = _ai_root(tmp_path)
-    tampered = tmp_path / "tampered"
-    shutil.copytree(ROOT / "examples/sample-artifact", tampered)
-    ctx = pd.read_parquet(tampered / "training_context.parquet")
-    ctx["target"] = ctx["target"].to_numpy()[::-1]
-    ctx.to_parquet(tampered / "training_context.parquet", index=False)
-    manifest = json.loads((tampered / "artifact.json").read_text())
-    data = (tampered / "training_context.parquet").read_bytes()
-    manifest["trainingContext"].update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
-    (tampered / "artifact.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    pinned = json.loads((ROOT / "examples/sample-artifact/SAMPLE_ARTIFACT.json").read_text())["artifact_sha256"]
-    observed = hashlib.sha256((tampered / "artifact.json").read_bytes()).hexdigest()
-    run = AI_STAGES.Run(root, tmp_path / "outputs", tmp_path / "weights", {"source": "directory", "artifact_dir": str(tampered), "expected_sha256": pinned})
-    with pytest.raises(ValueError, match=f"EXPECTED_ARTIFACT_SHA256 is {pinned}, the supplied file's SHA-256 is {observed}"):
-        _quiet(AI_STAGES.stage_artifact, run)
-    assert not (root / "state/artifact.json").exists()
-    run.options["expected_sha256"] = ""  # without a digest it is internally consistent: accepted, with a warning
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        AI_STAGES.stage_artifact(run)
-    assert "No EXPECTED_ARTIFACT_SHA256 was supplied" in out.getvalue()
-    run.options["expected_sha256"] = "abc"
-    with pytest.raises(ValueError, match="must be 64 hexadecimal characters"):
-        _quiet(AI_STAGES.stage_artifact, run)
-
-
-# ---------------------------------------------------------------- TDRA-m3: identifier columns, sample_kind
-
-
-def test_m3_id_columns_are_kept_out_of_features_and_reported(tmp_path) -> None:
-    """TDRA-m3: an identifier column declared in ID_COLUMNS is scored around, not as a feature; undeclared, it is refused by name."""
-    root = _ai_root(tmp_path)
-    run = AI_STAGES.Run(root, tmp_path / "outputs", tmp_path / "weights", {"source": "sample"})
-    _quiet(AI_STAGES.stage_artifact, run)
-    rows = pd.read_csv(ROOT / "examples/sample-artifact/new_rows.csv").rename(columns={"row_id": "patient_id"})
-    path = tmp_path / "mine.csv"
-    rows.to_csv(path, index=False)
-    run.options = {"source": "path", "path": str(path), "id_columns": []}
-    with pytest.raises(ValueError, match=r"Feature schema mismatch; missing=\[\], extra=\['patient_id'\]"):
-        _quiet(AI_STAGES.stage_rows, run)
-    run.options["id_columns"] = ["patient_id"]
-    _quiet(AI_STAGES.stage_rows, run)
-    state = json.loads((root / "state/rows.json").read_text())
-    assert state["id_columns"] == ["patient_id"] and state["sample_kind"] == "BYOD"
-    run.options["id_columns"] = ["bmi"]
-    with pytest.raises(ValueError, match="are fitted feature columns"):
-        _quiet(AI_STAGES.stage_rows, run)
-
-
-# ---------------------------------------------------------------- ENV15: no worker, no google.colab stub, no IPython in stages
-
-
-@pytest.mark.parametrize("template", ["notebook_template.py", "notebook_template_artifact_inference.py"])
+@pytest.mark.parametrize("template", ["notebook_template.py"])
 def test_stage_processes_import_neither_ipython_nor_google_colab(template: str) -> None:
     """Stages run in the isolated environment, which has neither IPython nor google.colab: only kernel cells may use them
     (the upload dialogs). There is no worker and no google.colab stub that would need a ModuleSpec (ENV15). No carried
@@ -493,7 +364,7 @@ def test_stage_processes_import_neither_ipython_nor_google_colab(template: str) 
     text = (ROOT / "tutorials" / tpl["notebook_name"]).read_text(encoding="utf-8")
     assert "sys.modules['google" not in text and 'sys.modules[\\"google' not in text and "_WORKER_SOURCE" not in text
     assert "IPython" not in text
-    # google.colab appears only in the kernel's own upload branches, imported inside them (TDR-m1 / TDRA-m1).
+    # google.colab appears only in the kernel's own upload branches, imported inside them (TDR-m1).
     for cell in _code_cells(ROOT / "tutorials" / tpl["notebook_name"]):
         if "google.colab" in cell:
             assert re.search(r"^\s+from google\.colab import files$", cell, re.M), cell[:200]

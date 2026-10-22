@@ -3,8 +3,9 @@
 The generator writes the infrastructure cells (runtime check, carrier, isolated install + stage runner, checkpoint
 staging) from repository files; this template holds the learner-facing prose, the guided layer and the learner
 cells. Every learner cell calls ``run_stage(...)``: the carried ``tools/tutorial_stages.py`` runs one stage per process
-in an isolated, hash-locked environment, so nothing is installed into the notebook kernel. The ARTIFACT-INFERENCE
-companion has its own template, ``tools/notebook_template_artifact_inference.py``.
+in an isolated, hash-locked environment, so nothing is installed into the notebook kernel. Since NOTEBOOK_SPEC 3.0 the
+notebook closes its canonical path with the external-artifact section (Section 10, §19.1), which replaced the separate
+artifact-inference companion notebook (KND11).
 """
 # ruff: noqa: E501  -- markdown prose and code-cell text are kept on single lines for readable rendering
 
@@ -33,7 +34,7 @@ BADGES = [
     ("arXiv", "https://img.shields.io/badge/arXiv-2608.01400-b31b1b.svg", "https://arxiv.org/abs/2608.01400"),
 ]
 
-# Shared by both templates: the isolated-environment pins (the fleet's uv wheel, a managed CPython).
+# The isolated-environment pins (the fleet's uv wheel, a managed CPython).
 UV = {
     "version": "0.12.15",
     "url": "https://files.pythonhosted.org/packages/1e/fd/432451d732917c49152a291de3ef171aa6b0f1a22d39780fb2c1f085ca4c/uv-0.12.15-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
@@ -67,12 +68,13 @@ TEMPLATE = {
     "profile": "E2E",
     "mode": "GUIDED",
     "stage_runner": "tools/tutorial_stages.py",
-    "carried_extra": {"sample-artifact/SAMPLE_ARTIFACT.json": "examples/sample-artifact/SAMPLE_ARTIFACT.json"},
+    "notebook_spec": "3.0",
+    "notebook_kind": "TUTORIAL",
     "run_all": (
-        "Selecting **Run all** in a fresh Linux x86_64 runtime (a T4 GPU is recommended) builds an isolated Python environment from the carried hash-locked requirements without touching the notebook kernel's own packages, then runs each stage below in its own process: it stages and digest-verifies the pinned TabDPT checkpoint, loads scikit-learn's bundled diabetes table (no download), validates it into an input manifest (finite numeric target) and splits it, compares a training-mean baseline and a standardised linear-regression reference, **adapts TabDPT by in-context conditioning on the training split** (the adaptation stage: TabDPT registers the support rows; it has no gradient fine-tuning route), reports the capacity used, evaluates on the held-out split and writes the evaluation report, scores new rows and writes machine-readable outputs, exports the serving artifact and reloads it in a fresh process through `load_verified_artifact`. No repository clone, DIMER worker or service, credential, upload dialog, configuration edit or runtime restart is required (NOTEBOOK_SPEC 2.2 §5). No hosted run of this revision has been recorded yet."
+        "Selecting **Run all** in a fresh Linux x86_64 runtime (a T4 GPU is recommended) builds an isolated Python environment from the carried hash-locked requirements without touching the notebook kernel's own packages, then runs each stage below in its own process: it stages and digest-verifies the pinned TabDPT checkpoint, loads scikit-learn's bundled diabetes table (no download), validates it into an input manifest (finite numeric target) and splits it, compares a training-mean baseline and a standardised linear-regression reference, **adapts TabDPT by in-context conditioning on the training split** (the adaptation stage: TabDPT registers the support rows; it has no gradient fine-tuning route), reports the capacity used, evaluates on the held-out split and writes the evaluation report, scores new rows and writes machine-readable outputs, exports the serving artifact (a directory and a deterministic ZIP of it) and reloads it in a fresh process through `load_verified_artifact`, and finally, in the closing external-artifact section, downloads the pinned sample artifact that a recorded earlier run of this notebook exported (a GitHub release asset, accepted only at its pinned SHA-256 and never this run's export), validates it, rebuilds serving state from its files with the checkpoint Section 3 verified, and scores eight diabetes holdout rows. No repository clone, DIMER worker or service, credential, upload dialog, configuration edit or runtime restart is required (NOTEBOOK_SPEC 3.0 §5). No hosted run of this revision has been recorded yet."
     ),
     "byod": (
-        "After the sample workflow completes, set `USE_BYOD = True` in Section 4 and run Sections 4–9 again to use one labelled CSV or Parquet file of your own: set `BYOD_PATH` to a file already in the runtime (works in Colab, Kaggle and Jupyter), or leave it empty in Colab to choose the file in an upload dialog. Name your numeric target column in `TARGET` and any identifier-like categorical columns in `CATEGORICAL_COLUMNS`. The table needs at least 10 rows, so that the 20 % holdout has two rows with different targets. A missing, blank, non-numeric or infinite target value is refused in Section 4 with the count and examples, before anything is written to `outputs/`. It then enters the same validation, split, baselines, in-context conditioning, evaluation, new-data inference, export and fresh-reload stages as the sample. The file stays inside this runtime. BYOD is optional and never part of the default path."
+        "After the sample workflow completes, set `USE_BYOD = True` in Section 4 and run Sections 4–9 again to use one labelled CSV or Parquet file of your own: set `BYOD_PATH` to a file already in the runtime (works in Colab, Kaggle and Jupyter), or leave it empty in Colab to choose the file in an upload dialog. Name your numeric target column in `TARGET` and any identifier-like categorical columns in `CATEGORICAL_COLUMNS`. The table needs at least 10 rows, so that the 20 % holdout has two rows with different targets. A missing, blank, non-numeric or infinite target value is refused in Section 4 with the count and examples, before anything is written to `outputs/`. It then enters the same validation, split, baselines, in-context conditioning, evaluation, new-data inference, export and fresh-reload stages as the sample. In Section 10, `USE_OWN_ROWS` scores your own rows with the external artifact, and `ARTIFACT_SOURCE` can load your own artifact ZIP instead of the pinned sample (both off by default). The file stays inside this runtime. BYOD is optional and never part of the default path."
     ),
     "title": "TabDPT Regressor — DIMER E2E tabular regression tutorial (standalone)",
     "badges": BADGES,
@@ -104,8 +106,9 @@ TEMPLATE = {
         "4. **Interpret** MAE, RMSE and R², in target units and relative to the target's spread (Section 6).\n"
         "5. **Apply** the conditioned model to new rows and read point predictions beside the true targets (Section 8).\n"
         "6. **Verify** that an exported serving artifact reproduces the predictions after a fresh reload without refitting preprocessing (Section 9).\n"
-        "7. **Predict**, run and **explain** the effect of one change — the number of ensemble members — in an optional activity (Section 10).\n"
-        "8. **Write** an evidence-based conclusion that names the baselines, the split-to-split range and the limits of one small public table (Conclusion)."
+        "7. **Validate and serve** an artifact made outside this run: check its pinned digest before opening it, read its provenance and format, rebuild serving state from its files, and say how that differs from the fresh reload (Section 10).\n"
+        "8. **Predict**, run and **explain** the effect of one change — the number of ensemble members — in an optional activity (Section 11).\n"
+        "9. **Write** an evidence-based conclusion that names the baselines, the split-to-split range and the limits of one small public table (Conclusion)."
     ),
     "exclusions": (
         "classification, gradient fine-tuning, or calibrated per-prediction uncertainty intervals. Predictions are "
@@ -138,14 +141,15 @@ TEMPLATE = {
                 "fails. Stages hand results to each other only through files: the verified checkpoint, the validated table and "
                 "split, and JSON records. A stage that needs the conditioned model conditions it again from the saved split — "
                 "conditioning is fast and deterministic for a fixed seed.\n\n"
-                "**Two kinds of cell.** *Learner cells* (Sections 4–10) are the machine-learning workflow; each runs one stage and "
+                "**Two kinds of cell.** *Learner cells* (Sections 4–11) are the machine-learning workflow; each runs one stage and "
                 "prints compact dictionaries for you to read. *Infrastructure cells* (Sections 1–3: the runtime check, the carried "
                 "code, the isolated environment and the checkpoint staging) are collapsed and titled **Infrastructure**. You may run "
                 "them without studying their implementation: they exist for reproducibility and provenance, not as prerequisite "
                 "machine-learning knowledge.\n\n"
                 "**Form controls.** Some learner cells start with fields that Colab renders as a form: `USE_BYOD`, `BYOD_PATH`, "
-                "`TARGET` and `CATEGORICAL_COLUMNS` (Section 4), `N_ENSEMBLES` and `CONTEXT_SIZE` (Section 6), and `RUN_ACTIVITY` "
-                "and `ACTIVITY_N_ENSEMBLES` (Section 10). Leave them at their defaults for the first run: the notes and sample "
+                "`TARGET` and `CATEGORICAL_COLUMNS` (Section 4), `N_ENSEMBLES` and `CONTEXT_SIZE` (Section 6), `ARTIFACT_SOURCE`, "
+                "`ARTIFACT_ZIP_PATH`, `EXPECTED_ZIP_SHA256`, `USE_OWN_ROWS` and `EXTERNAL_ROWS_PATH` (Section 10), and `RUN_ACTIVITY` "
+                "and `ACTIVITY_N_ENSEMBLES` (Section 11). Leave them at their defaults for the first run: the notes and sample "
                 "answers describe the default path.\n\n"
                 "**Section tags.** Each numbered heading carries one tag. **[Concept]** — what the model does and why. "
                 "**[Evaluation practice]** — how the evidence is produced and how to read it. **[Engineering]** — reproducibility, "
@@ -163,7 +167,8 @@ TEMPLATE = {
                 "| **Condition** | the support rows | the repository's feature encoder; TabDPT's support-fitted mean imputer and standard scaler; the support rows registered as context | a conditioned pipeline (no weights change) |\n"
                 "| **Predict** | query rows with the same feature columns | the pinned TabDPT checkpoint reading up to `context_size` support rows, `n_ensembles` passes | one point estimate per row, in target units |\n"
                 "| **Evaluate** | the holdout rows and their targets | `evaluate`, `training_mean_baseline`, a linear-regression reference | MAE, RMSE, R²; an evaluation report |\n"
-                "| **Package** | the conditioned pipeline and its support rows | `export_artifact_bundle`, `load_verified_artifact` | `artifact.json` + `training_context.parquet`, reloaded without refitting |\n\n"
+                "| **Package** | the conditioned pipeline and its support rows | `export_artifact_bundle`, a deterministic ZIP, `load_verified_artifact` | `artifact.json` + `training_context.parquet` (and their ZIP), reloaded without refitting |\n"
+                "| **Serve elsewhere** | a pinned artifact ZIP from an earlier recorded run + eight holdout rows | digest check, safe extraction, `validate_artifact_bundle`, `load_verified_artifact` | predictions under `outputs/external_artifact/` |\n\n"
                 "## Roadmap\n\n"
                 "| Section | Tag | What happens | What you read |\n"
                 "|---|---|---|---|\n"
@@ -176,11 +181,13 @@ TEMPLATE = {
                 "| 7. Evaluation report | [Evaluation practice] | the report with every baseline and an interpretation | what the numbers support |\n"
                 "| 8. New-data inference and outputs | [Engineering] | eight rows scored; CSV and JSON outputs | the output contract |\n"
                 "| 9. Export and fresh reload | [Engineering] | the serving artifact exported and reloaded in a new process | the reload check and the digest |\n"
-                "| 10. Optional activity | [Concept] | change `n_ensembles` (off by default) | your comparison |\n"
+                "| Interpretation and conclusion | [Evaluation practice] | limits and an evidence-based conclusion | your conclusion |\n"
+                "| 10. Using an artifact made elsewhere | [Engineering] | the pinned sample artifact verified, rebuilt and used to score eight holdout rows | provenance, digests, predictions |\n"
+                "| 11. Optional activity | [Concept] | change `n_ensembles` (off by default) | your comparison |\n"
                 "| Troubleshooting | [Engineering] | common failures and what to do | when something fails |\n"
-                "| Interpretation and conclusion | [Evaluation practice] | limits and an evidence-based conclusion | your conclusion |\n\n"
-                "**Fast path.** Short on time? Run all, then read Sections 6, 7 and 9 and the conclusion: they carry the principal "
-                "results. The canonical path ends with Section 9; Section 10 changes nothing unless you switch it on."
+                "| References | | sources and repository documents | |\n\n"
+                "**Fast path.** Short on time? Run all, then read Sections 6, 7, 9 and 10 and the conclusion: they carry the principal "
+                "results. The canonical path ends with Section 10; Section 11 changes nothing unless you switch it on."
             ),
             (
                 "<details>\n"
@@ -204,7 +211,8 @@ TEMPLATE = {
                 "| **Point estimate** | One number per row with no interval around it; this pipeline produces no uncertainty interval. |\n"
                 "| **Split-to-split range** | How much a metric moves when the same model is refitted on other seeded splits of the same table. |\n"
                 "| **Input manifest** | A JSON record of the validated table: schema, target summary, missing values, verdict and findings. |\n"
-                "| **Serving artifact** | `artifact.json` + `training_context.parquet`: everything needed to rebuild the conditioned pipeline elsewhere. |\n"
+                "| **Serving artifact** | `artifact.json` + `training_context.parquet`: everything needed to rebuild the conditioned pipeline elsewhere; the export also packs them into one deterministic ZIP. |\n"
+                "| **External artifact** | An artifact made outside this run (Section 10): here, a pinned release asset that an earlier recorded run exported. |\n"
                 "| **No-refit reload** | Rebuilding the pipeline from saved preprocessing statistics instead of fitting them again. |\n"
                 "| **Digest (SHA-256)** | A fingerprint of a file's bytes; one changed byte changes it. |\n"
                 "| **Hash-locked environment** | A separate Python environment built from a requirements file that pins every package to one version and its SHA-256 digests. |\n"
@@ -383,7 +391,7 @@ TEMPLATE = {
                 "estimate** in target units, with no uncertainty interval. `row_id` is the row's index in the original table; it "
                 "stays outside the model's feature schema and maps predictions back to inputs.\n\n"
                 "Outputs: `outputs/{stem}_predictions.csv` (`row_id`, `prediction`); `outputs/{stem}_new_rows.csv` (the same eight "
-                "rows, unlabelled, with `row_id` — the input the companion artifact-inference notebook accepts); and "
+                "rows, unlabelled, with `row_id` — an unlabelled input in the artifact's schema, which Section 10's own-rows branch accepts); and "
                 "`outputs/{stem}_result.json`, which records the metrics, both baselines, the evaluation report, the input "
                 "manifest, the sample identity and digest, the split, the capacity report, the inference controls, the notebook's "
                 "source (repository, revision, carried-file digests, generator), the model identifier, the immutable model "
@@ -406,15 +414,15 @@ TEMPLATE = {
                 "support data, the fitted repository/upstream preprocessing state and the exact pinned base-model contract. The "
                 "`export` stage writes, with `export_artifact_bundle`, `outputs/artifact/artifact.json` (with the support table's "
                 "size and SHA-256 and the base-model identity) and `training_context.parquet`; the latter inherits the source "
-                "data's confidentiality, licensing, retention and disclosure obligations. It prints the artifact's **trusted "
-                "digest** — the SHA-256 of `artifact.json`, which pins the Parquet file — to hand to the companion notebook "
-                "(`EXPECTED_ARTIFACT_SHA256`), and, on the default path, whether the export is byte-identical to the companion's "
-                "pinned sample artifact.\n\n"
+                "data's confidentiality, licensing, retention and disclosure obligations. It prints the SHA-256 of `artifact.json` "
+                "(which pins the Parquet file) and then packs both files into `outputs/{stem}_artifact.zip`, a **deterministic ZIP**: "
+                "members at its root in sorted order, with a fixed timestamp and mode, so two runs that export the same bytes print "
+                "the same ZIP digest. The ZIP's SHA-256 is the artifact's **trusted digest**, to hand over with the ZIP; whoever "
+                "loads it checks it before opening it (Section 10 shows that check on an artifact made elsewhere).\n\n"
                 "The `reload` stage then runs in a **fresh process**: it copies the artifact to `outputs/artifact-reload/`, validates "
                 "it before reconstruction, and loads it through the verified **no-preprocessing-refit** path with the base "
                 "checkpoint taken from the digest-verified snapshot of Section 3 (no network fallback). Predictions must match the "
-                "exporting process's within `rtol=1e-5`, `atol=1e-6`; bitwise identity is not required. The companion notebook "
-                "`tabdpt_regressor_artifact_inference_colab.ipynb` consumes this artifact from a separate execution.\n\n"
+                "exporting process's within `rtol=1e-5`, `atol=1e-6`; bitwise identity is not required.\n\n"
                 "**Predict before running:** will the reloaded model's predictions be bitwise identical to the exporting "
                 "process's? Why might they not be, even though nothing is refitted?"
             ),
@@ -422,10 +430,10 @@ TEMPLATE = {
         },
         {
             "md": (
-                "**What to notice:** the artifact's two files, its `artifact_sha256`, the `training_context_sha256`, and "
-                "`matches_pinned_sample_artifact: True` on the default path; then the largest absolute prediction difference (zero "
+                "**What to notice:** the artifact's two files, its `artifact_sha256`, the `training_context_sha256`, the "
+                "ZIP's name, members and `zip_sha256`, and the trusted-digest line; then the largest absolute prediction difference (zero "
                 "or a tiny floating-point difference) and the `PASS` line.\n\n"
-                "**Checkpoint:** what does a matching `artifact_sha256` prove to the person you send the artifact to, and what "
+                "**Checkpoint:** what does a matching `zip_sha256` prove to the person you send the artifact to, and what "
                 "does it not prove?\n\n"
                 "<details>\n<summary>Check your reasoning (open after answering)</summary>\n\n"
                 "A matching digest proves that the files they received are byte for byte the files this run exported — nothing "
@@ -440,7 +448,160 @@ TEMPLATE = {
         },
         {
             "md": (
-                "## 10. Optional activity: how many ensemble members does this table need? · [Concept]\n\n"
+            "## Interpretation and limits\n\n"
+            "Predictions are continuous point estimates in the target's units with no uncertainty interval; any tolerance or "
+            "decision band must be chosen on the caller's own labelled, domain-representative data. The evaluation report's "
+            "`sample-sanity` verdict names what it is: one seeded random holdout of the public sample with no dispersion "
+            "estimate for the model — tutorial evidence that must not be generalised to a domain, a target range or a "
+            "data-collection process. On this small, noisy table a standardised linear regression explains about 45 % of the "
+            "holdout variance, and its R² moves from 0.33 to 0.59 across seeded splits, so differences of a few hundredths of R² "
+            "between models on one split do not rank them. Rows that are not independent (temporal, grouped, spatial), targets "
+            "outside the support range, wide tables that trigger upstream feature reduction, and support sets larger than "
+            "`context_size` (subsampling) all change results in ways the metrics above do not measure.\n\n"
+            "Successful execution proves that the recorded repository revision's package, carried in this notebook, can "
+            "acquire and digest-verify the pinned checkpoint, validate the demonstrated table, condition on regression "
+            "support data, surface missing-value and capacity behaviour, compute sample metrics against a training-mean "
+            "baseline and a classical reference, score new rows, emit the shown machine-readable outputs and the DIMER serving "
+            "artifact, reconstruct equivalent predictions in a fresh process from serialised fitted preprocessing without "
+            "refitting it, and validate, rebuild and serve a pinned artifact that an earlier recorded run produced — without the "
+            "repository being reachable. It does **not** establish benchmark superiority, domain "
+            "generalisation, fairness, robustness, calibration, production safety, or deployment fitness.\n\n"
+            "## Conclusion · [Evaluation practice]\n\n"
+            "Write three to five sentences, in your own words, using the numbers your run printed:\n\n"
+            "1. **Result:** TabDPT's holdout MAE, RMSE and R², beside the training-mean baseline's and the linear reference's.\n"
+            "2. **Reading:** whether the gap to the reference is larger than the reference's split-to-split R² range (Section 6), "
+            "and what the MAE means against the target's spread.\n"
+            "3. **Reuse:** what the Section 9 reload proved, what the artifact digest does and does not prove, and what Section 10 (next) adds with an artifact made elsewhere.\n"
+            "4. **Limit:** the one limitation you would fix first before using this on your own data.\n\n"
+            "<details>\n<summary>Sample conclusion (open after writing yours)</summary>\n\n"
+            "On the 89-row holdout of the diabetes table, TabDPT conditioned in context on 353 support rows scored the MAE, RMSE "
+            "and R² printed in Section 6, against MAE 64.01 / R² −0.012 for the training mean and MAE 42.79 / R² 0.453 for a "
+            "standardised linear regression. The linear regression alone ranged 0.332–0.585 in R² over 20 seeded splits, so a gap "
+            "of a few hundredths between the two models is within split-to-split variation: the run shows that TabDPT predicts "
+            "useful signal without training, not that it beats a linear model here, and an MAE in the 40s on a target with a "
+            "standard deviation near 77 is a rough estimate. The exported artifact reloaded in a fresh process with equivalent "
+            "predictions, and its digest lets a recipient check they got exactly these files, though not who made them; Section 10 "
+            "then served a pinned artifact from an earlier recorded run after checking its digest before opening it. Before "
+            "using it on my own data I would evaluate on repeated or grouped splits of a larger table and attach an uncertainty "
+            "estimate before relying on any single prediction.\n\n"
+            "</details>\n\n"
+            ),
+        },
+        {
+            "md": (
+                "## 10. Using an artifact made elsewhere · [Engineering]\n\n"
+                "So far this notebook has scored data with the pipeline it conditioned in this run. The fresh reload showed that "
+                "this run's export survives serialization; this section shows that an artifact made elsewhere can be validated and "
+                "served here. It downloads a pinned artifact that an earlier, recorded run of this notebook exported, verifies its "
+                "SHA-256 before opening it, shows its provenance and format, rebuilds serving state from its files, and scores sample "
+                "rows that follow the same data contract as the rest of this notebook. **This run's own export (Section 9) is never "
+                "used here.**\n\n"
+                "**This section needs only the setup cells (Sections 1–3).** It reads no table, split, record or file that Sections "
+                "4–9 created: it uses the checkpoint Section 3 verified and its own downloads, so if you already hold a compatible "
+                "artifact you can run Sections 1–3 and then this section alone. Its outputs go to `outputs/external_artifact/`, "
+                "apart from the main path's files.\n\n"
+                "**The pinned sample artifact.** By default the `external_artifact` stage downloads `{stem}_artifact.zip` from this "
+                "repository's GitHub release `sample-artifact-diabetes-v1` (no account or token). It is the deterministic export ZIP "
+                "of a recorded hosted T4 run of this notebook's default path (the diabetes sample); the release notes name the "
+                "producing notebook, its commit and the run record, and the asset is never replaced (a changed artifact gets a new "
+                "tag). The stage prints the URL, the pinned SHA-256, the producer and the format **before** it downloads anything, "
+                "then refuses the file unless its SHA-256 equals the pinned value. Only then are the ZIP's members extracted one by "
+                "one: exactly `artifact.json` and `training_context.parquet` at the ZIP root, regular files only (no directory, "
+                "absolute path, `..` or symlink), within a size cap. `validate_artifact_bundle` then checks the format, version, "
+                "target column, base-model identity and the Parquet file's size and SHA-256, and the manifest's feature columns and "
+                "target column must equal the diabetes default path's (a regression artifact has no label set to compare). Any "
+                "failed check stops the run, and no prediction file is written.\n\n"
+                "**Trust boundary.** The artifact holds labelled support rows and fitted preprocessing statistics, not model weights: "
+                "the model weights come only from the checkpoint whose SHA-256 Section 3 verified, and `artifact.json` must name "
+                "exactly that base model. The artifact is read as JSON and Parquet; nothing in it is executed. Even so, its "
+                "support rows decide every prediction, so loading an artifact means trusting its producer: the pinned SHA-256 binds "
+                "this download to the file the maintainer published. For an artifact of your own, the only binding is a digest you "
+                "received from its producer through a separate channel (`EXPECTED_ZIP_SHA256`).\n\n"
+                "**Optional: your own artifact (off by default).** Set `ARTIFACT_SOURCE` to `My own artifact ZIP` and give "
+                "`ARTIFACT_ZIP_PATH` (or leave it empty in Colab to upload) and the producer's `EXPECTED_ZIP_SHA256`. Without a "
+                "digest the checks establish internal consistency only, and the stage says so."
+            ),
+            "code": (
+                "ARTIFACT_SOURCE = 'Pinned sample artifact'  # @param [\"Pinned sample artifact\", \"My own artifact ZIP\"]\n"
+                "ARTIFACT_ZIP_PATH = ''  # @param {{type:\"string\"}}\n"
+                "EXPECTED_ZIP_SHA256 = ''  # @param {{type:\"string\"}}\n\n\n"
+                "def external_upload(what):\n"
+                "    \"\"\"Colab upload for the optional branches of this section; elsewhere, set the path field.\"\"\"\n"
+                "    try:\n"
+                "        from google.colab import files\n"
+                "    except ImportError as exc:\n"
+                "        raise RuntimeError(f'No path was given for {{what}}, and the upload dialog exists only in Google Colab: set the path field, then run this cell again.') from exc\n"
+                "    uploaded = files.upload()\n"
+                "    if len(uploaded) != 1:\n"
+                "        raise RuntimeError(f'Expected exactly one file for {{what}}; received {{len(uploaded)}}. Run this cell again.')\n"
+                "    ((upload_name, upload_payload),) = uploaded.items()\n"
+                "    upload_path = ROOT / 'inputs' / Path(upload_name).name\n"
+                "    upload_path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "    upload_path.write_bytes(upload_payload)\n"
+                "    return str(upload_path)\n\n\n"
+                "if ARTIFACT_SOURCE == 'Pinned sample artifact':\n"
+                "    run_stage('external_artifact', source='pinned')\n"
+                "else:\n"
+                "    run_stage('external_artifact', source='own', zip_path=ARTIFACT_ZIP_PATH or external_upload('your artifact ZIP'), expected_zip_sha256=EXPECTED_ZIP_SHA256)"
+            ),
+        },
+        {
+            "md": (
+                "**What to notice:** the provenance line is printed before the download; then `trusted_digest: verified (pinned "
+                "SAMPLE_ARTIFACT_SHA256)`, the format and version, and the `data_contract`; the base-model identity the artifact "
+                "names; and its 10 feature columns, its `target` column, 353 support rows and their target summary."
+            ),
+        },
+        {
+            "md": (
+                "**Reconstruct serving state locally.** The `external_reconstruct` stage rebuilds the pipeline from the artifact's "
+                "files, in a new process, through `load_verified_artifact`: the support rows from `training_context.parquet`, the "
+                "fitted feature encoder, imputer and scaler from `artifact.json` — restored, not refitted — and the base checkpoint "
+                "Section 3 verified (no network fallback). Nothing is refitted from the rows you are about to score."
+            ),
+            "code": "run_stage('external_reconstruct')",
+        },
+        {
+            "md": (
+                "**Score sample rows, or your own.** By default the `external_predict` stage scores eight diabetes rows with their "
+                "target removed: the first eight holdout rows of the default path's seeded split, recomputed from scikit-learn's "
+                "bundled table (no file of Sections 4–9 is read). They follow the artifact's data contract and are not among its "
+                "support rows. The rows pass `validate_inputs` against the artifact's feature columns, a probe with a missing "
+                "feature must be refused, and non-numeric or infinite values in a numeric feature are refused naming the column. "
+                "Each `prediction` is a continuous point estimate in target units, with no uncertainty interval. The predictions, "
+                "the input manifest and the artifact's provenance go to "
+                "`outputs/external_artifact/{stem}_external_predictions.csv` and `outputs/external_artifact/{stem}_external_result.json`.\n\n"
+                "**Optional: your own rows (BYOD, off by default).** Tick `USE_OWN_ROWS` and set `EXTERNAL_ROWS_PATH` (or leave it "
+                "empty in Colab to upload) to an unlabelled CSV or Parquet file with the artifact's feature columns and an optional "
+                "`row_id` column; Section 8's `outputs/{stem}_new_rows.csv` has that shape. With your own artifact, your own rows are "
+                "required: the sample rows follow only the pinned artifact's contract."
+            ),
+            "code": (
+                "USE_OWN_ROWS = False  # @param {{type:\"boolean\"}}\n"
+                "EXTERNAL_ROWS_PATH = ''  # @param {{type:\"string\"}}\n\n"
+                "external_rows = ''\n"
+                "if USE_OWN_ROWS:\n"
+                "    external_rows = EXTERNAL_ROWS_PATH or external_upload('one unlabelled CSV or Parquet file')\n"
+                "run_stage('external_predict', rows_path=external_rows)"
+            ),
+        },
+        {
+            "md": (
+                "**What to notice:** eight rows with `row_id` 287, 211, 72, 321, 73, 418, 367 and 354 — the same rows as Section 8 — "
+                "each with a finite `prediction`; the two output paths under `outputs/external_artifact/`; and the artifact's "
+                "`zip_sha256`, equal to the pinned digest.\n\n"
+                "**Checkpoint:** if you set `ARTIFACT_SOURCE` to this run's own `outputs/{stem}_artifact.zip`, would that be "
+                "external-artifact evidence?\n\n"
+                "<details>\n<summary>Check your reasoning (open after answering)</summary>\n\n"
+                "No. An artifact this run created and then reloaded is a fresh-boundary test, which Section 9 already performed. "
+                "External evidence needs an artifact made outside this run with documented provenance, which is why the default is a "
+                "pinned release asset from an earlier recorded run, checked by its SHA-256 before it is opened.\n\n"
+                "</details>"
+            ),
+        },
+        {
+            "md": (
+                "## 11. Optional activity: how many ensemble members does this table need? · [Concept]\n\n"
                 "**Predict → Change → Run → Observe → Explain.** Each ensemble member is one pass with a different random view of "
                 "the context; `n_ensembles` averages them. **Predict:** with `ACTIVITY_N_ENSEMBLES = 8` instead of the canonical 2, "
                 "will RMSE go down, up, or stay within noise? **Change:** tick `RUN_ACTIVITY` and set `ACTIVITY_N_ENSEMBLES` (1–16). "
@@ -494,47 +655,16 @@ TEMPLATE = {
         "| `… rows is below the minimum of 10` or `fewer than 2 distinct target values` | a table too small to evaluate | Supply more rows; R² needs a holdout with varied targets. |\n"
         "| `numeric feature … contains infinite values` | `inf` in a numeric column | Replace it with a finite value or leave the cell empty. |\n"
         "| `USE_BYOD is True but BYOD_PATH is empty …` outside Colab, or `The upload was cancelled or empty` | no file was supplied | Set `BYOD_PATH`, or run the cell again and choose a file. |\n"
-        "| `matches_pinned_sample_artifact: False` in Section 9 | the export differs from the companion's pinned sample (for example a different library build) | Not an error for this notebook; record both digests and report it, because the companion's default path assumes they match. |\n\n"
-        "## Interpretation and limits\n\n"
-        "Predictions are continuous point estimates in the target's units with no uncertainty interval; any tolerance or "
-        "decision band must be chosen on the caller's own labelled, domain-representative data. The evaluation report's "
-        "`sample-sanity` verdict names what it is: one seeded random holdout of the public sample with no dispersion "
-        "estimate for the model — tutorial evidence that must not be generalised to a domain, a target range or a "
-        "data-collection process. On this small, noisy table a standardised linear regression explains about 45 % of the "
-        "holdout variance, and its R² moves from 0.33 to 0.59 across seeded splits, so differences of a few hundredths of R² "
-        "between models on one split do not rank them. Rows that are not independent (temporal, grouped, spatial), targets "
-        "outside the support range, wide tables that trigger upstream feature reduction, and support sets larger than "
-        "`context_size` (subsampling) all change results in ways the metrics above do not measure.\n\n"
-        "Successful execution proves that the recorded repository revision's package, carried in this notebook, can "
-        "acquire and digest-verify the pinned checkpoint, validate the demonstrated table, condition on regression "
-        "support data, surface missing-value and capacity behaviour, compute sample metrics against a training-mean "
-        "baseline and a classical reference, score new rows, emit the shown machine-readable outputs and the DIMER serving "
-        "artifact, and reconstruct equivalent predictions in a fresh process from serialised fitted preprocessing without "
-        "refitting it — without the repository being reachable. It does **not** establish benchmark superiority, domain "
-        "generalisation, fairness, robustness, calibration, production safety, or deployment fitness.\n\n"
-        "## Conclusion · [Evaluation practice]\n\n"
-        "Write three to five sentences, in your own words, using the numbers your run printed:\n\n"
-        "1. **Result:** TabDPT's holdout MAE, RMSE and R², beside the training-mean baseline's and the linear reference's.\n"
-        "2. **Reading:** whether the gap to the reference is larger than the reference's split-to-split R² range (Section 6), "
-        "and what the MAE means against the target's spread.\n"
-        "3. **Reuse:** what the Section 9 reload proved, and what the artifact digest does and does not prove.\n"
-        "4. **Limit:** the one limitation you would fix first before using this on your own data.\n\n"
-        "<details>\n<summary>Sample conclusion (open after writing yours)</summary>\n\n"
-        "On the 89-row holdout of the diabetes table, TabDPT conditioned in context on 353 support rows scored the MAE, RMSE "
-        "and R² printed in Section 6, against MAE 64.01 / R² −0.012 for the training mean and MAE 42.79 / R² 0.453 for a "
-        "standardised linear regression. The linear regression alone ranged 0.332–0.585 in R² over 20 seeded splits, so a gap "
-        "of a few hundredths between the two models is within split-to-split variation: the run shows that TabDPT predicts "
-        "useful signal without training, not that it beats a linear model here, and an MAE in the 40s on a target with a "
-        "standard deviation near 77 is a rough estimate. The exported artifact reloaded in a fresh process with equivalent "
-        "predictions, and its digest lets a recipient check they got exactly these files, though not who made them. Before "
-        "using it on my own data I would evaluate on repeated or grouped splits of a larger table and attach an uncertainty "
-        "estimate before relying on any single prediction.\n\n"
-        "</details>\n\n"
+        "| `Trusted digest mismatch` in Section 10 | the downloaded or supplied ZIP is not the pinned (or expected) artifact | Re-run the Section 10 cell to download again; never change the pinned digest. With your own ZIP, ask its producer for the digest. |\n"
+        "| `the artifact ZIP must hold exactly ['artifact.json', 'training_context.parquet']` or `unsafe ZIP member` | the ZIP was not written by this notebook's export stage, or was repacked | Use the ZIP the export stage wrote, unchanged. |\n"
+        "| `does not follow this notebook's default data contract (SART10)` | the artifact was built from another dataset or an earlier default | Use an artifact exported from this notebook's current default path. |\n"
+        "| `external_artifact.json is missing` or `weights.json is missing` | a later Section 10 cell was run before the first one, or Section 3 was not run | Run Sections 1–3, then the Section 10 cells in order. |\n\n"
         "**Next experiments:** enable `USE_BYOD` with a labelled CSV from your own domain and compare `evaluate` against "
-        "both baselines on a split that respects your data's structure; run the Section 10 activity with `n_ensembles` 1 "
+        "both baselines on a split that respects your data's structure; run the Section 11 activity with `n_ensembles` 1 "
         "and 16; supply a table with more features than the model ceiling to see the upstream feature-reduction path "
-        "activate; feed `outputs/artifact/`, `outputs/{stem}_new_rows.csv` and the printed digest to the companion "
-        "artifact-inference notebook in a separate session.\n\n"
+        "activate; in a separate session, set `ARTIFACT_SOURCE` to your own ZIP in Section 10 and give it this run's "
+        "`outputs/{stem}_artifact.zip` with its printed digest and `outputs/{stem}_new_rows.csv` (an exercise of the optional "
+        "branches, not external-artifact evidence).\n\n"
         "## References\n\n"
         f"- Repository README: https://github.com/kurtvalcorza/{REPO}/blob/main/README.md\n"
         f"- Repository model card: https://github.com/kurtvalcorza/{REPO}/blob/main/MODEL_CARD.md\n"
