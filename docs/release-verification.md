@@ -186,7 +186,32 @@ the stage then reported `fetched: []` and re-verified it. They are not hosted ru
 
 ## Current status
 
-**2026-10-10 — one-pass hosted runs of both current blobs are recorded** (the 2026-10-10 rows of the clean-runtime table): `tabdpt_regressor_colab.ipynb` (`7c878eb19872`) and `tabdpt_regressor_artifact_inference_colab.ipynb` (`ec42aa44be9f`) at `e54340a`, each by Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (not a browser Run all), no restart, 0 error outputs. Notes for the reviewer: (a) the T4 metrics are identical to the CPU reference to 4 decimals (MAE 40.9804 / RMSE 51.6813 / R² 0.4959), and the exported artifact's SHA-256 equals the pinned sample's (`0f75e258…`); (b) the companion's 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision — a finer comparison is not visible in the outputs; (c) both carried revision labels read `df095f8` (generation-time HEAD, not `e54340a`) — follow-up; (d) the optional activity was not run; (e) the maintainer accepted the carried sample (no release; Apache-2.0, no weights; byte-identical to a real CI export at `a67ffd2`). Both notebooks stay **Candidate**; remaining gates: reviewer confirmation of these runs, the BYOD journeys and the optional activities.
+**Current status (2026-10-22): Candidate.** Recorded: the hosted Colab T4 run of blob `b00122574c48` at `c61b0f0` (PR #25;
+Colab CLI, not a browser Run all) passed the default path end to end, including Section 10 with the v1 pin (see "First
+hosted run of the migrated notebook" above). The branch `spec3/sart9-inrun-zip` regenerates the notebook, so the blob at
+its head has no recorded run yet, and the `b00122574c48` run is history for it (REL14). The notebook stays Candidate
+pending:
+
+1. **the in-run artifact re-pin:** a recorded hosted run of the default path writes `outputs/tabdpt_regressor_artifact.zip`
+   and records its SHA-256 in `outputs/tabdpt_regressor_result.json`; that file, unchanged, is published as the immutable
+   release `sample-artifact-diabetes-v2` and re-pinned, and a hosted run of the re-pinned blob is recorded. The v1 asset
+   was assembled after its run and is superseded once v2 is pinned;
+2. **REL12:** a BYOD run that accepts one representative input through the downstream stages and refuses one
+   incompatible input;
+3. **REL2:** a run in the hosted runtime's browser interface for the interactive journeys (BYOD upload, the optional
+   activity toggle, the own-artifact ZIP);
+4. **a run of the optional activity** (off by default; every recorded run printed it as skipped).
+
+**v1 does not meet SART9 and is superseded once v2 is pinned (owner ruling, 2026-10-22).** The release asset of
+`sample-artifact-diabetes-v1` was packed on the VM after the `1e816d9` run by `…_pack.py` (`colab exec -f`) from that run's
+exported `outputs/artifact/`, not written by the notebook's own default path, so it is not the export of that path that
+SART9 requires, even though its member digests equal the run's printed digests. From `spec3/sart9-inrun-zip` on, the
+export stage's own output `outputs/tabdpt_regressor_artifact.zip` is the run's exported artifact: it is written in-run
+(sorted members, 1980-01-01 00:00:00, mode 0644, `create_system` 3, atomic write) and its SHA-256 is recorded in
+`outputs/tabdpt_regressor_result.json` under `artifact.zip_sha256`. Until v2 is pinned the notebook keeps the v1 pin; the
+v1 tag stays in place and is not overwritten (SART7).
+
+**History, 2026-10-10 — one-pass hosted runs of both blobs current at that time (the 2.2-era pair) were recorded** (the 2026-10-10 rows of the clean-runtime table): `tabdpt_regressor_colab.ipynb` (`7c878eb19872`) and `tabdpt_regressor_artifact_inference_colab.ipynb` (`ec42aa44be9f`) at `e54340a`, each by Colab CLI 0.7.4 sequential execution on a fresh Colab Tesla T4 (not a browser Run all), no restart, 0 error outputs. Notes for the reviewer: (a) the T4 metrics are identical to the CPU reference to 4 decimals (MAE 40.9804 / RMSE 51.6813 / R² 0.4959), and the exported artifact's SHA-256 equals the pinned sample's (`0f75e258…`); (b) the companion's 8 predictions agree with the E2E run's to 2 decimals, the E2E's printed precision — a finer comparison is not visible in the outputs; (c) both carried revision labels read `df095f8` (generation-time HEAD, not `e54340a`) — follow-up; (d) the optional activity was not run; (e) the maintainer accepted the carried sample (no release; Apache-2.0, no weights; byte-identical to a real CI export at `a67ffd2`). Both notebooks stay **Candidate**; remaining gates: reviewer confirmation of these runs, the BYOD journeys and the optional activities.
 
 Before 2026-10-10: no clean-runtime execution of the current standalone notebook blobs had been recorded (the 2026-09-14 Kaggle row is
 the previous E2E blob). The CI integration execution above

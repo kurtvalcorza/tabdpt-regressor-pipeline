@@ -53,6 +53,9 @@ ACTIVITY_DIR = "activity"
 # and a deterministic ZIP of exactly that directory, ``outputs/tabdpt_regressor_artifact.zip``, whose single SHA-256 is
 # the trusted digest a recipient checks before opening it. Members sit at the ZIP root in sorted order, each with the
 # fixed timestamp 1980-01-01 00:00:00 and mode 0644, so the digest depends only on the member names and bytes.
+# This ZIP, written by the default path's own export stage, IS the run's exported artifact: a sample-artifact release is
+# this file uploaded unchanged, at the digest the run recorded in outputs/<stem>_result.json (SART8, SART9). No ZIP is
+# assembled after the run.
 ARTIFACT_ZIP = f"{STEM}_artifact.zip"
 ARTIFACT_MEMBERS = ("artifact.json", "training_context.parquet")
 ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
@@ -567,12 +570,13 @@ def stage_export(run: Run) -> None:
     run.write_state("export_reference.json", {"predictions": pred.to_numpy().tolist(), "targetColumn": target, "weight": str(pipe.model_weight_path)})
     archive = deterministic_zip(art, run.out / ARTIFACT_ZIP)
     zip_digest = sha256_file(archive)
-    record: dict[str, Any] = {"artifact": str(manifest_path), "artifact_files": sorted(p.name for p in art.iterdir()), "artifact_sha256": digest, "training_context_sha256": json.loads(manifest_path.read_text(encoding="utf-8"))["trainingContext"]["sha256"], "zip": archive.name, "zip_members": sorted(ARTIFACT_MEMBERS), "zip_sha256": zip_digest}
+    record: dict[str, Any] = {"artifact": str(manifest_path), "artifact_files": sorted(p.name for p in art.iterdir()), "artifact_sha256": digest, "training_context_sha256": json.loads(manifest_path.read_text(encoding="utf-8"))["trainingContext"]["sha256"], "zip": archive.name, "zip_path": f"outputs/{archive.name}", "zip_bytes": archive.stat().st_size, "zip_members": sorted(ARTIFACT_MEMBERS), "zip_sha256": zip_digest}
     result_path = run.out / f"{STEM}_result.json"
-    if result_path.is_file():
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-        result["artifact"] = record
-        run.write_output(result_path.name, result)
+    if not result_path.is_file():
+        raise RuntimeError(f"outputs/{result_path.name} is missing: run Section 8 (new-data inference) before the export, so the run records the digest of the ZIP it exports.")
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["artifact"] = record  # the run's own record of its exported ZIP and its SHA-256 (SART8, SART9)
+    run.write_output(result_path.name, result)
     print(record)
     print(f"Trusted digest of this export: whoever loads outputs/{archive.name} elsewhere checks it against '{zip_digest}' (EXPECTED_ZIP_SHA256 in Section 10). Section 10 itself never loads this run's export; it loads the pinned sample artifact.")
 
