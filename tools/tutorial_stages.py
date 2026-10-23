@@ -10,7 +10,10 @@ the verified checkpoint under ``--weights``, the table and split written by earl
 and the learner-facing exports under ``--outputs``. In-context conditioning (``fit``) is deterministic for a fixed
 seed and support table, so a stage that needs the conditioned model conditions again from the saved split. On failure
 a stage writes ``RUN_DIR/state/<stage>.error.json`` with the exception type and message, which the notebook re-raises
-in the kernel.
+in the kernel. A user input the stage refuses (the BYOD table, your own artifact ZIP or rows) is not a failure
+(NOTEBOOK_SPEC 3.0 DAT19/DAT20): the stage raises ``Refused``, prints no traceback, records ``"refused": true`` with
+the file name and the rule, and exits with ``REFUSED_EXIT``; the notebook then shows one ``Refused: <file>: <reason>``
+line and stops at that cell.
 
 Stages: weights → data → validate → condition → report → predict → export → reload, then the closing external-artifact
 section (NOTEBOOK_SPEC 3.0 §19.1) external_artifact → external_reconstruct → external_predict, plus the optional
@@ -33,6 +36,7 @@ import re
 import shutil
 import sys
 import traceback
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +89,30 @@ SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 # --------------------------------------------------------------------------------------------------
 # run context
 # --------------------------------------------------------------------------------------------------
+
+
+REFUSED_EXIT = 3  # a user input refused with a learner-facing message (DAT20); argparse already uses 2, a crash exits 1
+
+
+class Refused(ValueError):
+    """A user-supplied input that breaks the input contract (DAT19). Not a crash: no traceback is printed for it."""
+
+    def __init__(self, file: str, reason: str) -> None:
+        self.file = str(file) or "your input"
+        self.reason = str(reason).strip()
+        super().__init__(f"{self.file}: {self.reason}")
+
+
+def refused(exc: BaseException, file: str, fix: str) -> Refused:
+    """``exc`` (whose message may start with ``<file>: ``) as one ``Refused`` naming ``file``, with how to recover."""
+    message = str(exc).strip()
+    if message.startswith(f"{file}: "):
+        message = message[len(file) + 2:]
+    if not message.endswith((".", ")")):
+        message += "."
+    if "again" not in message:
+        message += f" {fix}"
+    return Refused(file, message)
 
 
 class Run:
@@ -291,9 +319,12 @@ def stage_data(run: Run) -> None:
         print({"removed_previous_outputs": removed})
     if use_byod:
         byod_path = opts.get("byod_path") or ""
-        if not byod_path:
-            raise ValueError("USE_BYOD is True but no file was supplied: set BYOD_PATH, or (in Colab) leave it empty and choose a file in the upload dialog.")
-        frame = read_byod(byod_path, target, categorical)
+        if not byod_path or byod_path == ".":
+            raise Refused("BYOD_PATH", "USE_BYOD is True but no file was supplied: set BYOD_PATH, or (in Colab) leave it empty and choose a file in the upload dialog, then run the Section 4 cell again.")
+        try:
+            frame = read_byod(byod_path, target, categorical)
+        except (ValueError, OSError) as exc:  # pandas' and pyarrow's read errors are ValueError/OSError: the file, not a bug
+            raise refused(exc, Path(byod_path).name if Path(byod_path).is_file() else byod_path, "Fix the file (or the Section 4 fields) and run the Section 4 cell again.") from None
         kind, name = "BYOD", Path(byod_path).name
     else:
         frame = load_sample_frame()
@@ -315,24 +346,29 @@ def stage_validate(run: Run) -> None:
     frame = run.read_frame("frame.parquet", "validate")
     target = data["target"]
     print({"ceilings": {"MIN_DISTINCT_TARGETS": P.MIN_DISTINCT_TARGETS, "MIN_ROWS": MIN_ROWS, "TEST_SIZE": TEST_SIZE, "SEED": SEED}})
-    input_manifest = P.validate_inputs(frame, target_column=target, names=[data["name"]])
-    # Demonstrate rejection on a probe that breaks the target contract; the finding is recorded, not swallowed.
-    probe = frame.head(4).copy()
-    probe.loc[probe.index[0], target] = np.nan
     try:
-        P.validate_inputs(probe, target_column=target)
+        input_manifest = P.validate_inputs(frame, target_column=target, names=[data["name"]])
+        # Demonstrate rejection on a probe that breaks the target contract; the finding is recorded, not swallowed.
+        probe = frame.head(4).copy()
+        probe.loc[probe.index[0], target] = np.nan
+        try:
+            P.validate_inputs(probe, target_column=target)
+        except ValueError as exc:
+            input_manifest["findings"].append({"input": "missing-target-probe", "verdict": "rejected", "message": str(exc)})
+        features = frame.drop(columns=[target])
+        for column in features.select_dtypes(include=np.number).columns:
+            values = features[column].dropna().to_numpy(dtype=float)
+            if values.size and not np.isfinite(values).all():
+                raise ValueError(f"{data['name']}: numeric feature {column!r} contains infinite values; replace them with a finite value or leave the cell empty (missing).")
+        if len(frame) < MIN_ROWS:
+            raise ValueError(f"{data['name']}: {len(frame)} rows is below the minimum of {MIN_ROWS}: the {int(TEST_SIZE * 100)} % holdout needs at least 2 rows with different targets for R² to be defined.")
+        train, test = train_test_split(frame, test_size=TEST_SIZE, random_state=SEED)
+        if test[target].nunique() < P.MIN_DISTINCT_TARGETS:
+            raise ValueError(f"{data['name']}: the holdout's {len(test)} rows have fewer than {P.MIN_DISTINCT_TARGETS} distinct target values, so R² is undefined; supply more rows or a more varied target.")
     except ValueError as exc:
-        input_manifest["findings"].append({"input": "missing-target-probe", "verdict": "rejected", "message": str(exc)})
-    features = frame.drop(columns=[target])
-    for column in features.select_dtypes(include=np.number).columns:
-        values = features[column].dropna().to_numpy(dtype=float)
-        if values.size and not np.isfinite(values).all():
-            raise ValueError(f"{data['name']}: numeric feature {column!r} contains infinite values; replace them with a finite value or leave the cell empty (missing).")
-    if len(frame) < MIN_ROWS:
-        raise ValueError(f"{data['name']}: {len(frame)} rows is below the minimum of {MIN_ROWS}: the {int(TEST_SIZE * 100)} % holdout needs at least 2 rows with different targets for R² to be defined.")
-    train, test = train_test_split(frame, test_size=TEST_SIZE, random_state=SEED)
-    if test[target].nunique() < P.MIN_DISTINCT_TARGETS:
-        raise ValueError(f"{data['name']}: the holdout's {len(test)} rows have fewer than {P.MIN_DISTINCT_TARGETS} distinct target values, so R² is undefined; supply more rows or a more varied target.")
+        if data["sample_kind"] != "BYOD":
+            raise  # the bundled sample failing its own contract is a bug, not a refusal
+        raise refused(exc, data["name"], "Fix the file and run Sections 4 and 5 again.") from None
     run.write_output(f"{STEM}_input_manifest.json", input_manifest)
     print(json.dumps(input_manifest["inputs"][0], indent=2))
     print("findings:", input_manifest["findings"])
@@ -746,24 +782,34 @@ def stage_external_artifact(run: Run) -> None:
         trust = {"trusted_digest": "verified (pinned SAMPLE_ARTIFACT_SHA256)", "zip_sha256": SAMPLE_ARTIFACT_SHA256, "url": SAMPLE_ARTIFACT_URL, "producer": SAMPLE_ARTIFACT_PRODUCER}
     elif source == "own":
         zip_path = Path(opts.get("zip_path") or "")
-        if not str(zip_path) or not zip_path.is_file():
-            raise FileNotFoundError(f"ARTIFACT_ZIP_PATH {str(zip_path)!r} is not a file in this runtime: point it at the artifact ZIP you were given.")
+        if not str(zip_path) or str(zip_path) == "." or not zip_path.is_file():
+            raise Refused(str(zip_path) if str(zip_path) not in ("", ".") else "ARTIFACT_ZIP_PATH", "is not a file in this runtime: point ARTIFACT_ZIP_PATH at the artifact ZIP you were given, or upload it, then run this cell again.")
         expected = str(opts.get("expected_zip_sha256") or "")
         if expected:
-            trust = {"trusted_digest": "verified (EXPECTED_ZIP_SHA256)", "zip_sha256": check_trusted_digest(zip_path, expected, "EXPECTED_ZIP_SHA256")}
+            try:
+                digest = check_trusted_digest(zip_path, expected, "EXPECTED_ZIP_SHA256")
+            except ValueError as exc:
+                raise Refused(zip_path.name, f"{exc} Then run this cell again.") from None
+            trust = {"trusted_digest": "verified (EXPECTED_ZIP_SHA256)", "zip_sha256": digest}
         else:
             trust = {"trusted_digest": "not supplied", "zip_sha256": sha256_file(zip_path)}
             print("No EXPECTED_ZIP_SHA256 was supplied: the checks below establish internal consistency only, not that this is the artifact you were sent. Ask the producer for the digest its export stage printed.")
     else:
         raise ValueError(f"ARTIFACT_SOURCE must be the pinned sample or your own ZIP, got {source!r}")
-    safe_extract_artifact(zip_path, bundle)
-    manifest, context_path = P.validate_artifact_bundle(bundle / "artifact.json")
-    found = artifact_contract(manifest)
-    contract = None
-    if source == "pinned":
-        contract = default_contract()
-        check_data_contract(found, contract)
-    context = pd.read_parquet(context_path, engine="pyarrow")
+    try:
+        safe_extract_artifact(zip_path, bundle)
+        manifest, context_path = P.validate_artifact_bundle(bundle / "artifact.json")
+        found = artifact_contract(manifest)
+        contract = None
+        if source == "pinned":
+            contract = default_contract()
+            check_data_contract(found, contract)
+        context = pd.read_parquet(context_path, engine="pyarrow")
+    except (ValueError, RuntimeError, KeyError, OSError, zipfile.BadZipFile) as exc:
+        if source != "own":
+            raise  # the pinned sample failing these checks is an integrity error, not a refusal: keep the traceback
+        shutil.rmtree(bundle, ignore_errors=True)
+        raise refused(exc, zip_path.name, "Use an artifact ZIP that this notebook's export stage wrote, unchanged, and run this cell again.") from None
     target = manifest["targetColumn"]
     encoder = manifest["preprocessing"]["encoder"]
     record = {
@@ -826,47 +872,60 @@ def stage_external_predict(run: Run) -> None:
     import numpy as np
     import pandas as pd
 
-    P, art, serving = external_serving(run)
-    features = list(art["featureColumns"])
+    P = package(run.root)
+    art = run.read_state("external_artifact.json", "external_predict")
+    for stale in (f"{STEM}_external_predictions.csv", f"{STEM}_external_result.json"):  # a refusal leaves no earlier result (DAT20)
+        (external_out(run) / stale).unlink(missing_ok=True)
     path = str(run.options.get("rows_path") or "")
-    if path:
-        file = Path(path)
-        if not file.is_file():
-            raise FileNotFoundError(f"EXTERNAL_ROWS_PATH {path!r} does not exist in this runtime: upload the file or correct the path.")
-        name, kind = file.name, "BYOD"
-        raw = file.read_bytes()
-        frame = pd.read_csv(io.BytesIO(raw), dtype={c: "string" for c in art["categoricalColumns"]}) if name.lower().endswith(".csv") else pd.read_parquet(io.BytesIO(raw), engine="pyarrow")
-        if frame.columns.duplicated().any():
-            raise ValueError(f"{name}: duplicate columns are not supported.")
-        ids = frame[["row_id"]] if "row_id" in frame.columns and "row_id" not in features else pd.DataFrame({"row_id": range(len(frame))})
-        rows = frame.drop(columns=["row_id"], errors="ignore") if "row_id" not in features else frame
-    else:
+    try:
+        features = list(art["featureColumns"])
+        if path:
+            file = Path(path)
+            if not file.is_file():
+                raise Refused(path, "does not exist in this runtime: upload the file or correct EXTERNAL_ROWS_PATH, then run this cell again.")
+            name, kind = file.name, "BYOD"
+            raw = file.read_bytes()
+            frame = pd.read_csv(io.BytesIO(raw), dtype={c: "string" for c in art["categoricalColumns"]}) if name.lower().endswith(".csv") else pd.read_parquet(io.BytesIO(raw), engine="pyarrow")
+            if frame.columns.duplicated().any():
+                raise ValueError(f"{name}: duplicate columns are not supported.")
+            ids = frame[["row_id"]] if "row_id" in frame.columns and "row_id" not in features else pd.DataFrame({"row_id": range(len(frame))})
+            rows = frame.drop(columns=["row_id"], errors="ignore") if "row_id" not in features else frame
+        else:
+            if art["source"] != "pinned":
+                raise ValueError("The diabetes sample rows follow the pinned sample artifact's contract only. With your own artifact, set EXTERNAL_ROWS_PATH to rows that follow its manifest.")
+            sample = external_sample_rows(features)
+            name, kind = f"diabetes-holdout-first-{len(sample)}-rows", "sample"
+            ids, rows = sample[["row_id"]], sample.drop(columns=["row_id"])
+        reserved = [c for c in (art["targetColumn"], "prediction") if c in rows.columns]
+        if reserved:
+            raise ValueError(f"{name}: remove target/prediction columns before inference: {reserved}")
+        manifest_in = P.validate_inputs(rows, None, feature_columns=features, names=[name])
+        try:  # a probe that breaks the artifact's schema is refused; the finding is recorded, not swallowed
+            P.validate_inputs(rows.drop(columns=[features[0]]), None, feature_columns=features)
+        except ValueError as exc:
+            manifest_in["findings"].append({"input": "missing-column-probe", "verdict": "rejected", "message": str(exc)})
+        else:
+            raise RuntimeError("The missing-column probe was accepted: input validation is not working, so no prediction is written.")
+        rows = rows.loc[:, features].copy()
+        for column in art["numericColumns"]:
+            original = rows[column]
+            converted = pd.to_numeric(original, errors="coerce")
+            bad = original.notna() & converted.isna()
+            if bad.any():
+                raise ValueError(f"{name}: numeric feature {column!r} has {int(bad.sum())} non-numeric value(s), e.g. {[str(v) for v in original[bad].head(3).tolist()]}. Fix them (leave missing cells empty).")
+            finite = converted.dropna().to_numpy(dtype=float)
+            if finite.size and not np.isfinite(finite).all():
+                raise ValueError(f"{name}: numeric feature {column!r} contains infinite values.")
+            rows[column] = converted
+    except Refused:
+        raise
+    except (ValueError, OSError) as exc:
+        if path:
+            raise refused(exc, Path(path).name if Path(path).is_file() else path, "Fix the file and run this cell again.") from None
         if art["source"] != "pinned":
-            raise ValueError("The diabetes sample rows follow the pinned sample artifact's contract only. With your own artifact, set EXTERNAL_ROWS_PATH to rows that follow its manifest.")
-        sample = external_sample_rows(features)
-        name, kind = f"diabetes-holdout-first-{len(sample)}-rows", "sample"
-        ids, rows = sample[["row_id"]], sample.drop(columns=["row_id"])
-    reserved = [c for c in (art["targetColumn"], "prediction") if c in rows.columns]
-    if reserved:
-        raise ValueError(f"{name}: remove target/prediction columns before inference: {reserved}")
-    manifest_in = P.validate_inputs(rows, None, feature_columns=features, names=[name])
-    try:  # a probe that breaks the artifact's schema is refused; the finding is recorded, not swallowed
-        P.validate_inputs(rows.drop(columns=[features[0]]), None, feature_columns=features)
-    except ValueError as exc:
-        manifest_in["findings"].append({"input": "missing-column-probe", "verdict": "rejected", "message": str(exc)})
-    else:
-        raise RuntimeError("The missing-column probe was accepted: input validation is not working, so no prediction is written.")
-    rows = rows.loc[:, features].copy()
-    for column in art["numericColumns"]:
-        original = rows[column]
-        converted = pd.to_numeric(original, errors="coerce")
-        bad = original.notna() & converted.isna()
-        if bad.any():
-            raise ValueError(f"{name}: numeric feature {column!r} has {int(bad.sum())} non-numeric value(s), e.g. {[str(v) for v in original[bad].head(3).tolist()]}. Fix them (leave missing cells empty).")
-        finite = converted.dropna().to_numpy(dtype=float)
-        if finite.size and not np.isfinite(finite).all():
-            raise ValueError(f"{name}: numeric feature {column!r} contains infinite values.")
-        rows[column] = converted
+            raise refused(exc, art.get("zip") or "your artifact", "Tick USE_OWN_ROWS (or set EXTERNAL_ROWS_PATH) with rows that follow its manifest, and run this cell again.") from None
+        raise  # the bundled sample rows failing the pinned artifact's contract is a bug, not a refusal
+    _P, art, serving = external_serving(run)  # loaded only after the rows passed their checks (DAT19)
     kw = {**EXTERNAL_CONTROLS, "batch_size": BATCH_SIZE, "seed": SEED}
     values = np.asarray(serving.predict(rows, **kw).to_numpy(), dtype=float)
     if values.shape != (len(rows),) or not np.all(np.isfinite(values)):
@@ -927,6 +986,9 @@ def main(argv: list[str] | None = None) -> int:
     error_file.unlink(missing_ok=True)
     try:
         STAGES[args.stage](run)
+    except Refused as exc:  # the learner's input was refused, not a crash: no traceback, a dedicated exit code (DAT20)
+        error_file.write_text(json.dumps({"type": "Refused", "refused": True, "file": exc.file, "message": str(exc)}), encoding="utf-8")
+        return REFUSED_EXIT
     except BaseException as exc:  # noqa: BLE001 -- every failure is reported to the kernel with its own message
         traceback.print_exc()
         error_file.write_text(json.dumps({"type": type(exc).__name__, "message": str(exc)}), encoding="utf-8")
