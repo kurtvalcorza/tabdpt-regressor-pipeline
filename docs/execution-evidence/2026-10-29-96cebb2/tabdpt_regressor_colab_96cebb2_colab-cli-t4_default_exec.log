@@ -1,0 +1,191 @@
+[colab] Parsing notebook '<local-run-dir>/tabdpt_regressor_colab_96cebb2_colab-cli-t4.ipynb'...
+[colab] Executing cell 1/14 - Infrastructure: check the runtime, accelerator and disk; create (or keep) the run directory...
+{'accelerator': 'Tesla T4, 15360 MiB', 'kernel_python': '3.13.16', 'run_directory': '/content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2', 'outputs': '/content/outputs', 'weights': '/content/weights', 'environment_root': '/tmp/dimer_uv', 'free_gib': {'weights': 192.7, 'environment': 192.7}}
+[colab] Executing cell 2/14 - Infrastructure: write and verify the carried package, stage runner, lock, manifest and samples...
+{'carried_files': 9, 'verified': True, 'repository': 'kurtvalcorza/tabdpt-regressor-pipeline', 'revision': '5c1ce650b7e5f64b74d596df522862eaf0682b2e', 'generator': 'build_notebook.py/3.0-tabular'}
+[colab] Executing cell 3/14 - Infrastructure: build (or reuse) the isolated locked environment and define the stage runner...
+{'notebook_source': '5c1ce650b7e5f64b74d596df522862eaf0682b2e', 'python': '3.12.12', 'torch': '2.7.1', 'tabdpt': '1.2.0', 'numpy': '2.3.0', 'pandas': '2.3.2', 'scikit-learn': '1.7.0', 'cuda': True, 'locked_packages': 55, 'environment': '/tmp/dimer_uv/venv-9d2b35cfd6eb1c8c', 'environment_reused': False, 'setup_seconds': 62}
+[colab] Executing cell 4/14 - Infrastructure: stage and digest-verify the pinned checkpoint...
+Running stage 'weights' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/weights.log
+{'model_id': 'Layer6/TabDPT', 'revision': '4462ffbd1d8dea25d4862d30beed4b70cd596ae5', 'license': 'apache-2.0', 'files': 1, 'total_bytes': 254098072}
+{'weights_dir': '/content/weights/tabdpt-1.2', 'fetched': ['tabdpt1_2.safetensors']}
+{'verified_files': 1, 'revision': '4462ffbd1d8dea25d4862d30beed4b70cd596ae5', 'sha256': ['06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd']}
+[colab] Executing cell 5/14 - tabdpt_regressor-14...
+Running stage 'data' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/data.log
+{'sample_kind': 'sample', 'name': 'sklearn-diabetes.csv', 'rows': 442, 'columns': 11, 'csv_sha256': '217e07ce3890b29c3e6773b7a9712c3f1d1cdb2c56d697a790ebdf8ea455a052', 'target': 'target', 'declared_categorical_columns': 'sample schema'}
+{'target_summary': {'count': 442.0, 'mean': 152.133, 'std': 77.093, 'min': 25.0, '25%': 87.0, '50%': 140.5, '75%': 211.5, 'max': 346.0}}
+[colab] Executing cell 6/14 - tabdpt_regressor-17...
+Running stage 'validate' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/validate.log
+{'ceilings': {'MIN_DISTINCT_TARGETS': 2, 'MIN_ROWS': 10, 'TEST_SIZE': 0.2, 'SEED': 42}}
+{
+  "id": "sklearn-diabetes.csv",
+  "mode": "fit",
+  "rows": 442,
+  "feature_columns": [
+    "age",
+    "sex",
+    "bmi",
+    "bp",
+    "s1",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+  ],
+  "numeric_columns": [
+    "age",
+    "sex",
+    "bmi",
+    "bp",
+    "s1",
+    "s2",
+    "s3",
+    "s4",
+    "s5",
+    "s6"
+  ],
+  "categorical_columns": [],
+  "missing_value_columns": {},
+  "target_summary": {
+    "min": 25.0,
+    "max": 346.0,
+    "mean": 152.13348416289594,
+    "distinct": 214
+  }
+}
+findings: [{'input': 'missing-target-probe', 'verdict': 'rejected', 'message': 'Regression target must be finite and non-missing'}]
+{'train': [353, 11], 'holdout': [89, 11], 'train_target_mean': 153.737, 'holdout_target_std': 73.201}
+[colab] Executing cell 7/14 - tabdpt_regressor-20...
+Running stage 'condition' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/condition.log
+{'request': {'n_ensembles': 2, 'context_size': 512, 'batch_size': 512, 'seed': 42}}
+Requested context_size: 512 effective support rows <= 353
+{'targetColumn': 'target', 'encodedFeatureCount': 10, 'modelFeatureCeiling': 128, 'featureReduction': 'pca', 'featureReductionActive': False, 'numericMissingColumns': [], 'upstreamImputer': 'SimpleImputer', 'source': 'local-snapshot'}
+Feature reduction is not active for this dataset.
+tutorial TabDPT {'mae': 40.9804, 'rmse': 51.6813, 'r2': 0.4959} {'holdout_rows': 89, 'holdout_target_std': 73.201}
+training-mean baseline {'mae': 64.0065, 'rmse': 73.2225, 'r2': -0.012}
+standardised linear regression (classical reference) {'mae': 42.7941, 'rmse': 53.8534, 'r2': 0.4526}
+classical reference R² over 20 seeded splits: {'splits': 20, 'min': 0.3322, 'median': 0.4596, 'max': 0.5851}
+[colab] Executing cell 8/14 - tabdpt_regressor-23...
+Running stage 'report' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/report.log
+{
+  "task": "tabular regression by in-context conditioning on labelled support rows",
+  "score_semantics": "continuous point predictions in target units; no per-prediction uncertainty interval is produced",
+  "sample_kind": "sample",
+  "n_holdout": 89,
+  "target_column": "target",
+  "baselines": [
+    {
+      "id": "training_mean",
+      "metrics": [
+        {
+          "id": "mae",
+          "value": 64.0065
+        },
+        {
+          "id": "rmse",
+          "value": 73.2225
+        },
+        {
+          "id": "r2",
+          "value": -0.012
+        }
+      ]
+    },
+    {
+      "id": "standardised_linear_regression",
+      "metrics": [
+        {
+          "id": "mae",
+          "value": 42.7941
+        },
+        {
+          "id": "rmse",
+          "value": 53.8534
+        },
+        {
+          "id": "r2",
+          "value": 0.4526
+        }
+      ],
+      "split_to_split_r2": {
+        "splits": 20,
+        "min": 0.3322,
+        "median": 0.4596,
+        "max": 0.5851
+      }
+    }
+  ],
+  "model_id": "Layer6/TabDPT",
+  "model_revision": "4462ffbd1d8dea25d4862d30beed4b70cd596ae5",
+  "metrics": [
+    {
+      "id": "mae",
+      "value": 40.9804,
+      "units": "target units",
+      "higher_is_better": false,
+      "estimation": "single seeded random 80/20 holdout; no dispersion estimate for the model"
+    },
+    {
+      "id": "rmse",
+      "value": 51.6813,
+      "units": "target units",
+      "higher_is_better": false,
+      "estimation": "single seeded random 80/20 holdout; no dispersion estimate for the model"
+    },
+    {
+      "id": "r2",
+      "value": 0.4959,
+      "units": "unitless (1 - SSE/SST)",
+      "higher_is_better": true,
+      "estimation": "single seeded random 80/20 holdout; no dispersion estimate for the model"
+    }
+  ],
+  "verdict": "sample-sanity",
+  "reason": "89 labelled holdout row(s) from one seeded split; tutorial evidence, not a benchmark",
+  "needs": "an independent, domain-representative labelled test set for any generalisable quality claim; the point predictions carry no uncertainty interval",
+  "interpretation": "MAE and RMSE are in target units; the holdout target's standard deviation is 73.20, which is roughly the RMSE of always predicting its mean. The classical reference's R\u00b2 ranged 0.332\u20130.585 over 20 seeded splits of the same table (89 holdout rows each), so differences of a few hundredths of R\u00b2 between models on one split are within split-to-split variation; no dispersion was measured for the in-context model itself."
+}
+[colab] Executing cell 9/14 - tabdpt_regressor-26...
+Running stage 'predict' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/predict.log
+ row_id  prediction  holdout_target  abs_error
+    287      152.01           219.0      66.99
+    211      179.16            70.0     109.16
+     72      153.55           202.0      48.45
+    321      277.83           230.0      47.83
+     73      116.02           111.0       5.02
+    418       99.64            84.0      15.64
+    367      270.22           242.0      28.22
+    354      200.37           272.0      71.63
+['tabdpt_regressor_evaluation_report.json', 'tabdpt_regressor_input_manifest.json', 'tabdpt_regressor_new_rows.csv', 'tabdpt_regressor_predictions.csv', 'tabdpt_regressor_result.json']
+[colab] Executing cell 10/14 - tabdpt_regressor-29...
+Running stage 'export' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/export.log
+{'artifact': '/content/outputs/artifact/artifact.json', 'artifact_files': ['artifact.json', 'training_context.parquet'], 'artifact_sha256': '0f75e2582eb283e969d1ec8914034ca0254c7b34674744b98a729219987ac783', 'training_context_sha256': '186ce81debfc9893fb098fd59505fc4350b0f2c471bdcf0397f11dade0104b28', 'zip': 'tabdpt_regressor_artifact.zip', 'zip_path': 'outputs/tabdpt_regressor_artifact.zip', 'zip_bytes': 14960, 'zip_members': ['artifact.json', 'training_context.parquet'], 'zip_sha256': '66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244'}
+Trusted digest of this export: whoever loads outputs/tabdpt_regressor_artifact.zip elsewhere checks it against '66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244' (EXPECTED_ZIP_SHA256 in Section 10). Section 10 itself never loads this run's export; it loads the pinned sample artifact.
+Running stage 'reload' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/reload.log
+{'reload_dir': '/content/outputs/artifact-reload', 'process': 'fresh (separate from the exporting stage)', 'preprocessing_restored_': True, 'max_abs_prediction_difference': 0.0}
+PASS: fitted preprocessing restored without refit; predictions equivalent (rtol=1e-05, atol=1e-06).
+[colab] Executing cell 11/14 - tabdpt_regressor-33...
+Running stage 'external_artifact' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/external_artifact.log
+{'artifact': 'pinned sample artifact (created outside this run)', 'url': 'https://github.com/kurtvalcorza/tabdpt-regressor-pipeline/releases/download/sample-artifact-diabetes-v1/tabdpt_regressor_artifact.zip', 'pinned_sha256': '66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244', 'producer': {'notebook': 'tutorials/tabdpt_regressor_colab.ipynb (default path: the scikit-learn diabetes sample)', 'commit': '1e816d9a4ac8be7e345b748e8334d8e7504e834a', 'run': 'recorded hosted Colab T4 run; the release notes of the tag name the run record (SART8)', 'release_tag': 'sample-artifact-diabetes-v1'}, 'format': "tabdpt-dimer-context-v3 (formatVersion 3) in a ZIP of ['artifact.json', 'training_context.parquet']", 'integrity': "SHA-256 of the whole ZIP, checked before extraction; then the training context's size and SHA-256 from artifact.json"}
+{'source': 'pinned', 'zip': 'external_artifact.zip', 'zip_sha256': '66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244', 'trusted_digest': 'verified (pinned SAMPLE_ARTIFACT_SHA256)', 'format': 'tabdpt-dimer-context-v3', 'formatVersion': 3, 'artifactSemantics': 'support-context-plus-pinned-base-model', 'data_contract': 'diabetes default path (feature columns and target match)'}
+{'baseModel': {'filename': 'tabdpt1_2.safetensors', 'repo': 'Layer6/TabDPT', 'revision': '4462ffbd1d8dea25d4862d30beed4b70cd596ae5', 'sha256': '06680220fd66c4524051706b98c1c659a674d19d3a766cd0bb276505e99faccd', 'upstreamCodeCommit': '9cfb05e0a6bc380ae6c99c08adc8d50dacd4f246'}}
+{'featureColumns': 10, 'targetColumn': 'target', 'categoricalColumns': [], 'contextRows': 353, 'contextTargetSummary': {'mean': 153.737, 'std': 78.062, 'min': 25.0, 'max': 346.0}, 'contextSha256': '186ce81debfc9893fb098fd59505fc4350b0f2c471bdcf0397f11dade0104b28'}
+[colab] Executing cell 12/14 - tabdpt_regressor-36...
+Running stage 'external_reconstruct' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/external_reconstruct.log
+{'context_rows': 353, 'target_column': 'target', 'features': 10, 'modelFeatureCeiling': 128, 'featureReductionActive': False, 'preprocessing_restored_': True, 'base_weight': '/content/weights/tabdpt-1.2/tabdpt1_2.safetensors', 'categorical_columns_restored': []}
+[colab] Executing cell 13/14 - tabdpt_regressor-38...
+Running stage 'external_predict' in the isolated environment; log: /content/dimer_runs/tabdpt_regressor/7ed4f72e0bf2/logs/external_predict.log
+ row_id  prediction
+    287      152.01
+    211      179.16
+     72      153.55
+    321      277.83
+     73      116.02
+    418       99.64
+    367      270.22
+    354      200.37
+{'outputs': ['outputs/external_artifact/tabdpt_regressor_external_predictions.csv', 'outputs/external_artifact/tabdpt_regressor_external_result.json'], 'input_kind': 'sample', 'artifact_source': 'pinned', 'zip_sha256': '66f3d162096646300bfa560d92660314f0f62d4b2d3a5d43c3c7338f5a31d244'}
+[colab] Executing cell 14/14 - tabdpt_regressor-41...
+Optional activity skipped: tick RUN_ACTIVITY to run it. The canonical outputs are complete.
+[colab] Saving notebook with outputs to '<local-run-dir>/tabdpt_regressor_colab_96cebb2_colab-cli-t4_output.ipynb'...
